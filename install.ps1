@@ -23,7 +23,7 @@ param(
     [switch]$FromSource,   # exigir el modo código fuente (falla si no está junto a pyproject.toml)
     [switch]$Uninstall,    # quitar AltR
     [switch]$Purge,        # con -Uninstall: borrar también la configuración
-    [string]$Repo = "FeroxShark/alt-r-windows",
+    [string]$Repo = "USUARIO/alt-r-windows",
     [string]$Version = "latest"
 )
 
