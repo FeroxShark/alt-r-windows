@@ -9,12 +9,13 @@
 [general]
 # Atajo para leer la selección. Combinaciones: alt, ctrl, shift, win + una tecla
 # (letra, número, f1..f24, space, enter, esc, tab, up, down, left, right...).
-# Ejemplos: "alt+r", "ctrl+alt+l", "win+shift+s"
-hotkey = "alt+r"
+# Ejemplos: "ctrl+alt+r", "ctrl+alt+l", "win+shift+s"
+# (No uses "alt+r" solo: la NVIDIA App / GeForce Experience lo reserva para su overlay.)
+hotkey = "ctrl+alt+r"
 
 # Atajo para cortar la lectura. Dejalo vacío ("") para no usar ninguno
 # (igual podés cortar desde el ícono de la bandeja).
-stop_hotkey = "ctrl+alt+r"
+stop_hotkey = "ctrl+alt+s"
 
 # Si no hay nada seleccionado, leer lo que hay en el portapapeles.
 clipboard_fallback = true
@@ -42,6 +43,29 @@ strip_markdown = true
 
 # Si es false, las direcciones web (https://...) se dicen como "enlace".
 read_urls = false
+
+
+[overlay]
+# Ventanita flotante mientras se lee: muestra el texto con la palabra que suena
+# resaltada, una onda y una barra de progreso, con botones de pausa y de cortar.
+# No roba el foco ni bloquea los clics: sólo los botones y la barra reciben clics.
+# Si es false no se muestra nada (la lectura funciona igual).
+enabled = true
+
+# Dónde aparece: "bottom-center", "bottom-left", "bottom-right",
+# "top-center", "top-left" o "top-right".
+position = "bottom-center"
+
+# En qué monitor: "active" (el que tiene el mouse), "primary" (el principal) o
+# el número de monitor: 1, 2, 3... (como los ordena Windows).
+monitor = "active"
+
+# Opacidad del fondo, de 0.3 (muy transparente) a 1.0 (opaco). 0.925 es el
+# fondo semitransparente del original de Linux.
+opacity = 0.925
+
+# Tamaño de la letra del texto que se lee, en píxeles (12 a 28).
+font_size = 16
 
 
 [tts]

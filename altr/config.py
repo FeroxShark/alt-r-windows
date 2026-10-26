@@ -14,6 +14,8 @@ from .hotkeys import HotkeyError, parse_hotkey
 
 APP_DIR_NAME = "AltR"
 PROVIDERS = ("edge", "openai", "command")
+OVERLAY_POSITIONS = ("bottom-center", "bottom-left", "bottom-right",
+                     "top-center", "top-left", "top-right")
 
 
 class ConfigError(ValueError):
@@ -84,6 +86,7 @@ class Config:
         self.path = path
         self.general = Section("general", data["general"])
         self.text = Section("text", data["text"])
+        self.overlay = Section("overlay", data["overlay"])
         self.tts = Section("tts", data["tts"])
         self.edge = Section("edge", data["edge"])
         self.openai = Section("openai", data["openai"])
@@ -158,6 +161,18 @@ def parse_config(raw: dict, path: Path | None = None) -> Config:
             raise ConfigError(f"[general] stop_hotkey: {e}") from None
         if g["stop_hotkey"].strip().lower() == g["hotkey"].strip().lower():
             raise ConfigError("[general] hotkey y stop_hotkey no pueden ser el mismo atajo.")
+    o = data["overlay"]
+    o["position"] = o["position"].strip().lower()
+    o["monitor"] = o["monitor"].strip().lower()
+    if o["position"] not in OVERLAY_POSITIONS:
+        raise ConfigError(f"[overlay] position: '{o['position']}' no existe. Opciones: "
+                          + ", ".join(OVERLAY_POSITIONS) + ".")
+    if o["monitor"] not in ("active", "primary") and not (o["monitor"].isdigit() and int(o["monitor"]) >= 1):
+        raise ConfigError('[overlay] monitor: usá "active", "primary" o un número de monitor (1, 2, 3...).')
+    if not 0.3 <= o["opacity"] <= 1.0:
+        raise ConfigError("[overlay] opacity: tiene que estar entre 0.3 y 1.0.")
+    if not 12 <= o["font_size"] <= 28:
+        raise ConfigError("[overlay] font_size: tiene que estar entre 12 y 28.")
     if t["provider"] not in PROVIDERS:
         raise ConfigError(f"[tts] provider: '{t['provider']}' no existe. Opciones: "
                           + ", ".join(PROVIDERS) + ".")

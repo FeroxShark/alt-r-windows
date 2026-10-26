@@ -351,9 +351,16 @@ def _mci_error(err: int) -> str:
 
 
 class MciBackend:
-    """Reproduce mp3/wav con la API multimedia de Windows (sin instalar nada)."""
+    """Reproduce mp3/wav con la API multimedia de Windows (sin instalar nada).
 
-    def play(self, path: Path, volume: int, cancel: threading.Event) -> None:
+    Soporta lo que pide el overlay: pausa/continuar, saltar a un instante (`play from`) y
+    devolver la posición y la duración real del trozo por `ctl` (PlayControl).
+    """
+
+    def play(self, path: Path, volume: int, cancel: threading.Event, ctl=None, start: float = 0.0) -> None:
+        from .player import PlayControl
+
+        ctl = ctl or PlayControl()
         alias = f"altr{next(_alias_counter)}"
         kind = " type mpegvideo" if str(path).lower().endswith(".mp3") else ""
         err, _ = _mci(f'open "{path}"{kind} alias {alias}')
@@ -361,21 +368,67 @@ class MciBackend:
             raise RuntimeError(_mci_error(err))
         try:
             _mci(f"setaudio {alias} volume to {max(0, min(100, volume)) * 10}")  # si falla, sin volumen
+            _mci(f"set {alias} time format milliseconds")
             _, length = _mci(f"status {alias} length")
-            limit = (int(length) / 1000 if length.isdigit() else 600) + 10
-            err, _ = _mci(f"play {alias}")
+            if length.isdigit():
+                ctl.length = int(length) / 1000
+            limit = (ctl.length or 600) + 10
+            err = self._from(alias, start)
             if err:
                 raise RuntimeError(_mci_error(err))
+            paused = False
+            if ctl.paused:  # se pidió pausa antes de que arrancara el trozo
+                _mci(f"pause {alias}")
+                paused = True
             t_end = time.monotonic() + limit
             while time.monotonic() < t_end:
-                if cancel.wait(0.03):
+                if cancel.wait(0.03) or ctl.interrupt.is_set():
                     _mci(f"stop {alias}")
                     return
+                seek = ctl.take_seek()
+                if seek is not None:
+                    self._from(alias, seek)
+                    if paused:  # `play from` reanuda: lo dejamos pausado donde cayó
+                        _mci(f"pause {alias}")
+                if ctl.paused != paused:
+                    _mci(f"{'pause' if ctl.paused else 'resume'} {alias}")
+                    paused = ctl.paused
+                    if paused:
+                        t_end = max(t_end, time.monotonic() + 3600)
+                    else:
+                        t_end = time.monotonic() + limit
                 err, mode = _mci(f"status {alias} mode")
-                if err or mode == "stopped":
+                if err or (mode == "stopped" and not paused):
                     return
+                err, pos = _mci(f"status {alias} position")
+                if not err and pos.isdigit():
+                    ctl.position = int(pos) / 1000
         finally:
             _mci(f"close {alias}")
+
+    @staticmethod
+    def _from(alias: str, secs: float) -> int:
+        if secs > 0.01:
+            err, _ = _mci(f"play {alias} from {int(secs * 1000)}")
+        else:
+            err, _ = _mci(f"play {alias}")
+        return err
+
+
+WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST = 0x08000000, 0x00000080, 0x00000008
+GWL_EXSTYLE = -20
+user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+
+
+def apply_overlay_style(hwnd: int) -> None:
+    """Refuerza lo que Qt ya pide: la ventana del overlay no toma foco, no sale en Alt+Tab ni en
+    la barra de tareas y queda siempre arriba."""
+    h = wintypes.HWND(hwnd)
+    cur = user32.GetWindowLongPtrW(h, GWL_EXSTYLE)
+    user32.SetWindowLongPtrW(h, GWL_EXSTYLE, cur | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
 
 
 # ----------------------------------------------------------- sistema / extras

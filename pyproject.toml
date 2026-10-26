@@ -5,14 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "altr"
 dynamic = ["version"]
-description = "Lee en voz alta el texto seleccionado con un atajo global (Alt+R). Windows."
+description = "Lee en voz alta el texto seleccionado con un atajo global (Ctrl+Alt+R). Windows."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
     "edge-tts>=7.0",
-    "pystray>=0.19; sys_platform == 'win32'",
-    "Pillow>=10; sys_platform == 'win32'",
+    "PySide6-Essentials>=6.6",
 ]
 
 [project.scripts]
@@ -22,7 +21,7 @@ altr = "altr.cli:main"
 packages = ["altr"]
 
 [tool.setuptools.package-data]
-altr = ["config.default.toml"]
+altr = ["config.default.toml", "qml/*.qml", "qml/fonts/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "altr.__version__" }

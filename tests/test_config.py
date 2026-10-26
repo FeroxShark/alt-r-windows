@@ -10,7 +10,7 @@ from altr.config import (ConfigError, DEFAULT_CONFIG_PATH, ensure_config, load_c
 class ConfigTests(unittest.TestCase):
     def test_default_template_is_valid(self):
         cfg = load_config(DEFAULT_CONFIG_PATH)
-        self.assertEqual(cfg.general.hotkey, "alt+r")
+        self.assertEqual(cfg.general.hotkey, "ctrl+alt+r")
         self.assertEqual(cfg.tts.provider, "edge")
         self.assertEqual(cfg.edge.voice, "es-AR-ElenaNeural")
         self.assertEqual(cfg.warnings, [])
@@ -41,9 +41,16 @@ class ConfigTests(unittest.TestCase):
     def test_ranges_and_provider(self):
         for bad in ({"tts": {"speed": 9}}, {"tts": {"volume": 101}}, {"tts": {"provider": "azure"}},
                     {"general": {"hotkey": "r"}}, {"general": {"hotkey": "alt+nada"}},
-                    {"general": {"stop_hotkey": "alt+r"}}, {"text": {"max_chars": 0}}):
+                    {"general": {"stop_hotkey": "ctrl+alt+r"}}, {"overlay": {"position": "arriba"}}, {"overlay": {"monitor": "0"}}, {"overlay": {"opacity": 0.1}}, {"overlay": {"font_size": 40}}, {"text": {"max_chars": 0}}):
             with self.assertRaises(ConfigError, msg=bad):
                 parse_config(bad)
+
+    def test_overlay_defaults_and_overrides(self):
+        o = parse_config({}).overlay
+        self.assertEqual((o.enabled, o.position, o.monitor, o.opacity, o.font_size),
+                         (True, "bottom-center", "active", 0.925, 16))
+        o = parse_config({"overlay": {"position": "Top-Right", "monitor": "2", "opacity": 1}}).overlay
+        self.assertEqual((o.position, o.monitor, o.opacity), ("top-right", "2", 1.0))
 
     def test_empty_stop_hotkey_ok(self):
         self.assertEqual(parse_config({"general": {"stop_hotkey": ""}}).general.stop_hotkey, "")

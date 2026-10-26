@@ -131,7 +131,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="lista las voces de Edge (ej. es-AR)")
     p.add_argument("--install-autostart", action="store_true", help="arrancar con Windows")
     p.add_argument("--remove-autostart", action="store_true", help="no arrancar con Windows")
-    p.add_argument("--no-tray", action="store_true", help="sin ícono de bandeja")
+    p.add_argument("--no-tray", action="store_true", help="sin ícono de bandeja ni overlay")
+    p.add_argument("--demo-overlay", action="store_true",
+                   help="abre el overlay con una lectura de mentira, lo prueba y sale (0 = bien)")
+    p.add_argument("--screenshot", metavar="PNG", help="con --demo-overlay: guarda una captura del overlay")
     p.add_argument("-v", "--verbose", action="store_true", help="registro detallado")
     return p
 
@@ -189,6 +192,8 @@ def _run(args, out: _Out) -> int:
     if args.check:
         out(f"Config OK ({config_path})")
         out(f"  atajo: {cfg.general.hotkey}   cortar: {cfg.general.stop_hotkey or '(ninguno)'}")
+        o = cfg.overlay
+        out("  overlay: " + (f"{o.position}, monitor {o.monitor}" if o.enabled else "apagado"))
         out(f"  motor: {cfg.tts.provider}   velocidad: {cfg.tts.speed:g}   volumen: {cfg.tts.volume}")
         return 0
     if args.say is not None:
@@ -198,24 +203,19 @@ def _run(args, out: _Out) -> int:
             out(f"Error: {e}")
             return 1
 
+    if args.demo_overlay:
+        from .demo import run_demo
+        return run_demo(cfg, screenshot=args.screenshot, say=out)
+
     if os.name != "nt":
         out("AltR (atajos y bandeja) sólo funciona en Windows. "
-            "Acá podés probar con --say, --check y --list-voices.")
+            "Acá podés probar con --say, --check, --list-voices y --demo-overlay.")
         return 1
     from . import win
     from .app import App
 
     tray_factory = None
     if not args.no_tray:
-        from . import tray as tray_mod
-
-        if tray_mod.available():
-            def tray_factory(app):  # noqa: F811
-                return tray_mod.Tray(
-                    on_read_clipboard=app.read_clipboard, on_stop=app.reader.stop,
-                    on_open_config=app.open_config, on_reload=app.reload,
-                    on_open_log=app.open_log, on_quit=app.quit,
-                    autostart_get=win.autostart_enabled, autostart_set=win.set_autostart)
-        else:
-            log.warning("pystray/Pillow no están instalados: corro sin ícono de bandeja.")
+        from .ui import UiHost
+        tray_factory = UiHost
     return App(config_path, win, tray_factory=tray_factory).run()

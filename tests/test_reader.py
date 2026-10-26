@@ -27,11 +27,19 @@ class FakeProvider:
 class FakeBackend:
     def __init__(self, play_time=0.0):
         self.played = []
+        self.starts = []
+        self.seeks = 0
         self.play_time = play_time
 
-    def play(self, path, volume, cancel):
+    def play(self, path, volume, cancel, ctl=None, start=0.0):
         self.played.append((Path(path).read_bytes().decode(), volume))
-        cancel.wait(self.play_time)
+        self.starts.append(start)
+        end = time.monotonic() + self.play_time
+        while time.monotonic() < end:
+            if cancel.wait(0.01) or (ctl and ctl.interrupt.is_set()):
+                return
+            if ctl and ctl.take_seek() is not None:
+                self.seeks += 1
 
 
 def wait_for(cond, timeout=3.0):
@@ -100,7 +108,7 @@ class ReaderTests(unittest.TestCase):
 
     def test_backend_error_reported(self):
         class Bad:
-            def play(self, *a):
+            def play(self, *a, **kw):
                 raise RuntimeError("sin audio")
 
         r, states, errors = self.make(FakeProvider(), Bad())
@@ -120,6 +128,57 @@ class ReaderTests(unittest.TestCase):
         r.speak("Hola.")
         self.assertTrue(wait_for(lambda: states == [True, False]))
         self.assertTrue(dirs and wait_for(lambda: not dirs[0].exists()))
+
+    def test_snapshot_phases_and_texts(self):
+        r, states, _ = self.make(FakeProvider(), FakeBackend(play_time=5))
+        self.assertIsNone(r.snapshot())
+        r.speak(LONG)
+        self.assertTrue(wait_for(lambda: (r.snapshot() or {}).get("phase") == "playing"))
+        snap = r.snapshot()
+        self.assertEqual(" ".join(snap["texts"]).split(), LONG.split())
+        self.assertEqual(len(snap["durs"]), len(snap["texts"]))
+        self.assertTrue(snap["durs"][0] > 0)
+        r.stop()
+        self.assertTrue(wait_for(lambda: r.snapshot()["phase"] == "done"))
+
+    def test_snapshot_error_phase(self):
+        r, states, errors = self.make(FakeProvider(fail_on=0), FakeBackend())
+        r.speak("Hola.")
+        self.assertTrue(wait_for(lambda: (r.snapshot() or {}).get("phase") == "error"))
+        self.assertEqual(r.snapshot()["error"], "boom")
+
+    def test_pause_toggles_phase(self):
+        r, *_ = self.make(FakeProvider(), FakeBackend(play_time=5))
+        r.speak(LONG)
+        self.assertTrue(wait_for(lambda: (r.snapshot() or {}).get("phase") == "playing"))
+        r.toggle_pause()
+        self.assertEqual(r.snapshot()["phase"], "paused")
+        r.toggle_pause()
+        self.assertEqual(r.snapshot()["phase"], "playing")
+        r.stop()
+
+    def test_seek_within_chunk_and_to_other_chunk(self):
+        class Big(FakeProvider):  # ~2 s por trozo (6000 B/s) para que haya dónde saltar
+            def synthesize(self, text, out_dir, name):
+                p = super().synthesize(text, out_dir, name)
+                p.write_bytes(text.encode().ljust(12000, b" "))
+                return p
+
+        back = FakeBackend(play_time=5)
+        r, *_ = self.make(Big(), back)
+        r.speak(LONG)
+        self.assertTrue(wait_for(lambda: (r.snapshot() or {}).get("phase") == "playing"))
+        self.assertTrue(wait_for(lambda: sum(d is not None for d in r.snapshot()["durs"]) >= 3))
+        d0 = r.snapshot()["durs"][0]
+        r.seek(d0 / 2)
+        self.assertTrue(wait_for(lambda: back.seeks == 1))
+        n = len(back.played)
+        r.seek(d0 + 0.1)  # cae en el trozo 1
+        self.assertTrue(wait_for(lambda: len(back.played) == n + 1))
+        self.assertAlmostEqual(back.starts[-1], 0.1, delta=0.05)
+        self.assertAlmostEqual(r.snapshot()["pos"], d0 + 0.1, delta=0.05)
+        self.assertEqual(r.snapshot()["phase"], "playing")  # no parpadea a "stalled" al saltar
+        r.stop()
 
 
 if __name__ == "__main__":

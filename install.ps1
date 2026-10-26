@@ -152,7 +152,7 @@ function Install-AltR {
     }
     Write-Host ""
     Write-Host "Listo. AltR esta corriendo (icono junto al reloj, tal vez dentro de la flechita ^)." -ForegroundColor Green
-    Write-Host "Selecciona texto en cualquier programa y aprieta Alt+R."
+    Write-Host "Selecciona texto en cualquier programa y aprieta Ctrl+Alt+R."
     Write-Host "Configuracion: $DataDir\config.toml  (clic derecho en el icono > Abrir configuracion)"
 }
 

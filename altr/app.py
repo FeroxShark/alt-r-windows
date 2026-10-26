@@ -1,4 +1,4 @@
-"""La aplicación residente: atajos globales + lectura + ícono de bandeja.
+"""La aplicación residente: atajos globales + lectura + bandeja y overlay (ui.py).
 
 La plataforma (Windows) se inyecta como objeto con: capture_selection, get_clipboard_text,
 HotkeyManager, single_instance, open_path, autostart_enabled, set_autostart. Así la lógica
@@ -63,6 +63,8 @@ class App:
         self.reader.set_config(cfg)
         if self.hotkeys:
             self.hotkeys.reload(self._bindings())
+        if self.tray and hasattr(self.tray, "apply_config"):
+            self.tray.apply_config(cfg)
         msg = "Configuración recargada."
         if cfg.warnings:
             msg += " Avisos: " + " ".join(cfg.warnings)

@@ -1,7 +1,7 @@
 # AltR — leer en voz alta con un atajo (Windows)
 
-Seleccioná texto en **cualquier programa** (navegador, PDF, Word, Discord…), apretá **Alt+R** y una voz
-natural te lo lee. Apretá **Ctrl+Alt+R** para cortar. Vive como un ícono junto al reloj.
+Seleccioná texto en **cualquier programa** (navegador, PDF, Word, Discord…), apretá **Ctrl+Alt+R** y una voz
+natural te lo lee, con una cápsula flotante que marca la palabra que suena. Apretá **Ctrl+Alt+S** para cortar. Vive como un ícono junto al reloj.
 
 - Gratis y **sin cuenta ni clave**: usa por defecto las voces neuronales de Microsoft Edge (necesita internet).
 - Configurable en un solo archivo: voz, velocidad, volumen, atajos.
@@ -62,8 +62,8 @@ O para probarlo sin instalar nada: `py -3 -m pip install .` y después `py -3 -m
 
 1. Después de instalar aparece un ícono (un parlante) junto al reloj. Si no lo ves, está dentro de la
    flechita **^** de la bandeja; arrastralo afuera para dejarlo fijo.
-2. Seleccioná cualquier texto y apretá **Alt+R**. La primera vez tarda un segundo más.
-3. **Ctrl+Alt+R** corta la lectura. Un Alt+R nuevo corta lo que esté sonando y lee lo nuevo.
+2. Seleccioná cualquier texto y apretá **Ctrl+Alt+R**. La primera vez tarda un segundo más.
+3. **Ctrl+Alt+S** corta la lectura (también la X de la cápsula). Un Ctrl+Alt+R nuevo corta lo que esté sonando y lee lo nuevo.
 
 ---
 
@@ -71,8 +71,10 @@ O para probarlo sin instalar nada: `py -3 -m pip install .` y después `py -3 -m
 
 | Atajo (por defecto) | Qué hace |
 |---|---|
-| **Alt+R** | Lee el texto seleccionado (si no hay nada seleccionado, lee el portapapeles). |
-| **Ctrl+Alt+R** | Corta la lectura. |
+| **Ctrl+Alt+R** | Lee el texto seleccionado (si no hay nada seleccionado, lee el portapapeles). |
+| **Ctrl+Alt+S** | Corta la lectura. |
+
+(El atajo no es `Alt+R` a secas porque la NVIDIA App lo reserva para su overlay; ver *Problemas comunes*.)
 
 Clic derecho en el ícono: **Detener lectura** · **Leer el portapapeles** · **Abrir configuración** ·
 **Recargar configuración** · **Abrir registro (log)** · **Iniciar con Windows** · **Salir**.
@@ -81,7 +83,7 @@ Clic derecho en el ícono: **Detener lectura** · **Leer el portapapeles** · **
 Cómo funciona: AltR simula un `Ctrl+C` en la ventana activa, lee lo copiado y te **devuelve el portapapeles
 como estaba** (sólo texto; si tenías una imagen copiada, se pierde). En terminales (Windows Terminal, cmd,
 PowerShell…) **no** manda `Ctrl+C`, porque ahí interrumpiría lo que esté corriendo: copiá vos el texto y
-apretá Alt+R para leer el portapapeles.
+apretá Ctrl+Alt+R para leer el portapapeles.
 
 ---
 
@@ -95,12 +97,22 @@ Lo que borres toma el valor por defecto. Si te equivocás, AltR te avisa y sigue
 
 | Campo | Por defecto | Qué es |
 |---|---|---|
-| `hotkey` | `"alt+r"` | Atajo para leer. Modificadores `alt`, `ctrl`, `shift`, `win` + una tecla (letra, número, `f1`…`f24`, `space`, `enter`, flechas…). Ej.: `"ctrl+alt+l"`. |
-| `stop_hotkey` | `"ctrl+alt+r"` | Atajo para cortar. `""` = ninguno. |
+| `hotkey` | `"ctrl+alt+r"` | Atajo para leer. Modificadores `alt`, `ctrl`, `shift`, `win` + una tecla (letra, número, `f1`…`f24`, `space`, `enter`, flechas…). Ej.: `"ctrl+alt+l"`. |
+| `stop_hotkey` | `"ctrl+alt+s"` | Atajo para cortar. `""` = ninguno. |
 | `clipboard_fallback` | `true` | Sin selección, leer el portapapeles. |
 | `restore_clipboard` | `true` | Devolver el portapapeles como estaba tras copiar la selección. |
 | `clipboard_only_apps` | terminales | Programas donde no se manda `Ctrl+C` (se lee el portapapeles). |
 | `notifications` | `true` | Globos de aviso cuando algo falla. |
+
+### `[overlay]` — la cápsula de lectura
+
+| Campo | Por defecto | Qué es |
+|---|---|---|
+| `enabled` | `true` | `false` = sin overlay (la lectura funciona igual). |
+| `position` | `"bottom-center"` | `"bottom-center"`, `"bottom-left"`, `"bottom-right"`, `"top-center"`, `"top-left"` o `"top-right"`. |
+| `monitor` | `"active"` | `"active"` (el que tiene el mouse), `"primary"` o un número: `1`, `2`, `3`… |
+| `opacity` | `0.925` | Opacidad del fondo, 0.3–1.0 (más bajo = más transparente). |
+| `font_size` | `16` | Tamaño del texto, 12–28. |
 
 ### `[text]`
 
@@ -207,6 +219,7 @@ wifi = "uaifai"
 ```text
 AltR.exe                        arranca la aplicación residente (lo normal)
 AltR.exe --check                valida el config
+AltR.exe --demo-overlay [--screenshot a.png]   abre el overlay con una lectura de prueba, lo prueba y sale
 AltR.exe --say "Hola" [--out a.mp3]   lee un texto (o lo guarda) sin atajos ni bandeja: sirve para probar voces
 AltR.exe --list-voices es-AR    voces de Edge
 AltR.exe --config-path          dónde está el config
@@ -219,26 +232,51 @@ Con la instalación desde código fuente: `py -3 -m altr …`. Sin consola (el `
 
 ---
 
+## El overlay de lectura
+
+![El overlay mientras lee](docs/overlay.png)
+
+Mientras AltR lee aparece una cápsula de vidrio abajo al centro de la pantalla (es el mismo overlay que la versión
+de Linux, con la misma estética): el texto en tres líneas con la **palabra que suena marcada en verde** y lo ya leído
+apagado, una **onda** que avanza con el audio, el tiempo (`0:08 / 0:14`), el botón de **pausa / seguir** a la izquierda
+y la **X** para cortar a la derecha. Mientras se genera la voz muestra «Preparando»; si algo falla, «No pude leer» con
+el motivo.
+
+- **Hacé clic en la onda** (o arrastrala) para saltar a otro punto, o **clic en una palabra** del texto para seguir desde
+  ahí. Sólo se puede saltar a lo que ya se generó.
+- **No te roba el foco ni los clics:** la ventana no se activa, no sale en Alt+Tab ni en la barra de tareas, y todo lo
+  que está fuera de la cápsula deja pasar el mouse. Seguís escribiendo donde estabas.
+- Se elige dónde y cómo se ve en la sección `[overlay]` del config (abajo); `enabled = false` lo apaga.
+- Para verlo sin hablar con Edge: `AltR.exe --demo-overlay` (lo abre con una lectura de prueba, lo prueba y se cierra).
+
+---
+
 ## Problemas comunes
 
-- **Alt+R choca con NVIDIA.** El overlay de rendimiento de la NVIDIA App / GeForce Experience usa Alt+R por
-  defecto y se queda con el atajo (AltR lo avisa con un globo y en el registro: «No pude registrar el atajo»).
-  Dos salidas: (1) cambiar el atajo de AltR: ícono → *Abrir configuración* → `hotkey = "ctrl+alt+l"` → ícono →
-  *Recargar configuración*; o (2) apagar el de NVIDIA: NVIDIA App → *Configuración* → *Funciones* → *Overlay* →
+- **`Alt+R` choca con NVIDIA.** El overlay de rendimiento de la NVIDIA App / GeForce Experience usa Alt+R por
+  defecto y se queda con ese atajo; por eso AltR viene con `Ctrl+Alt+R`. Si lo cambiaste a `alt+r` y no responde
+  (AltR avisa con un globo y en el registro: «No pude registrar el atajo»), dos salidas: (1) volver a un atajo con
+  `ctrl`: ícono → *Abrir configuración* → `hotkey = "ctrl+alt+r"` → ícono → *Recargar configuración*; o (2) apagar el
+  de NVIDIA: NVIDIA App → *Configuración* → *Funciones* → *Overlay* →
   *Atajos de teclado* (o GeForce Experience → engranaje → *Superposición en el juego* → *Atajos de teclado*) y
   cambiá o quitá «Mostrar/Ocultar el rendimiento».
 - **Con `alt+<letra>` en Firefox no lee (o se abre la barra de menús).** Firefox muestra su barra de menús al
   soltar Alt y esa pulsación se come el Ctrl+C. AltR mete una tecla intermedia para evitarlo; si en tu caso igual
   pasa, usá un atajo con `ctrl` (`"ctrl+alt+l"`), que Firefox no interpreta como menú.
-- **Alt+R no hace nada.** Mirá el aviso del globo o el registro (ícono → *Abrir registro*). Si dice "otro programa ya
+- **El atajo no hace nada.** Mirá el aviso del globo o el registro (ícono → *Abrir registro*). Si dice "otro programa ya
   usa ese atajo", cambiá `hotkey` en el config (por ejemplo `"ctrl+alt+l"`) y recargá.
 - **Dice "No hay texto seleccionado".** Algunos programas no responden a `Ctrl+C` (juegos, apps con permisos de
   administrador: Windows no deja que un programa normal le mande teclas a uno elevado). Copiá el texto a mano y
-  apretá Alt+R: lee el portapapeles.
+  apretá Ctrl+Alt+R: lee el portapapeles.
 - **No suena nada / error de conexión.** El motor `edge` necesita internet. Probá `AltR.exe --say "hola"`. Si Microsoft
   responde 403, actualizá AltR (a veces cambian el servicio y `edge-tts` se actualiza).
 - **Al soltar Alt se abre un menú del programa.** AltR intenta evitarlo; si te pasa en algún programa, usá un atajo con
-  `ctrl` (por ejemplo `"ctrl+alt+r"`).
+  `ctrl` (el de fábrica, `"ctrl+alt+r"`, ya lo es).
+- **No veo la cápsula.** Mirá que `[overlay] enabled` sea `true` y el `monitor` exista. Si el registro dice «el overlay no
+  cargó», avisá con ese texto. `AltR.exe --demo-overlay` la abre con una lectura de prueba.
+- **La cápsula tapa algo.** Cambiá `position` (por ejemplo `"top-right"`) o bajale la `opacity`; los clics fuera de
+  la cápsula pasan de largo.
+- **No cambia la velocidad desde la cápsula.** A diferencia de Linux, acá la velocidad es la de `[tts] speed`.
 - **El portapapeles quedó con otra cosa.** Sólo se restaura texto. Poné `restore_clipboard = false` si preferís que
   quede lo seleccionado.
 - **Hay pausas entre frases.** Cada frase se genera por separado; con motores lentos (una API remota lejana) puede
@@ -268,14 +306,18 @@ Con el instalador:
 altr/
   cli.py        línea de comandos y arranque
   app.py        aplicación residente (atajos + lector + bandeja)
+  ui.py         Qt (PySide6): ícono de bandeja y overlay (QQuickView); un solo QApplication
+  qml/Overlay.qml  el overlay (port del de Quickshell de Linux) y qml/fonts/ (Inter, OFL)
+  demo.py       --demo-overlay: lectura de prueba y comprobaciones del overlay
+  audio.py      duración y onda aproximada de cada trozo
   reader.py     trocea, sintetiza por adelantado y reproduce; una lectura nueva corta la anterior
   providers.py  motores: edge, openai (API compatible), command
   config.py     lectura y validación del config (los valores por defecto salen de config.default.toml)
   text.py       limpieza de texto y troceado por frases
   hotkeys.py    parseo de atajos ("ctrl+alt+r")
   win.py        capa de Windows con ctypes: portapapeles, SendInput, RegisterHotKey, reproducción MCI, autoarranque
-  tray.py       ícono de bandeja (pystray + Pillow)
-tests/          unittest; todo menos test_win.py corre en cualquier sistema
+tests/          unittest; todo menos test_win.py corre en cualquier sistema (test_ui.py necesita PySide6 y usa
+                Qt offscreen: `QT_QPA_PLATFORM=offscreen`)
 altr.spec       PyInstaller;  install.ps1  instalador;  .github/workflows/build.yml  CI + release
 ```
 

@@ -62,7 +62,7 @@ class AppTests(unittest.TestCase):
 
     def test_creates_default_config(self):
         self.assertTrue(self.path.exists())
-        self.assertEqual(self.app.cfg.general.hotkey, "alt+r")
+        self.assertEqual(self.app.cfg.general.hotkey, "ctrl+alt+r")
 
     def test_read_hotkey_speaks_selection(self):
         self.app.on_hotkey("read")
@@ -99,6 +99,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.app.cfg.tts.volume, 20)
         self.assertEqual(self.app.hotkeys.reloads[0]["read"], "ctrl+alt+l")
 
+    def test_reload_applies_overlay_config_to_tray(self):
+        class Tray:
+            def __init__(self):
+                self.applied, self.notes = [], []
+
+            def apply_config(self, cfg):
+                self.applied.append(cfg.overlay.position)
+
+            def notify(self, msg):
+                self.notes.append(msg)
+
+        self.app.tray = Tray()
+        self.path.write_text('[overlay]\nposition = "top-right"\n', encoding="utf-8")
+        self.app.reload()
+        self.assertEqual(self.app.tray.applied, ["top-right"])
+
     def test_reload_bad_config_keeps_old(self):
         self.app.hotkeys = FakeHotkeys(self.app.on_hotkey)
         msgs = []
@@ -120,7 +136,7 @@ class AppTests(unittest.TestCase):
         t = threading.Thread(target=self.app.run)
         t.start()
         self.assertTrue(wait_for(lambda: self.app.hotkeys is not None and self.app.hotkeys.bindings))
-        self.assertEqual(self.app.hotkeys.bindings, {"read": "alt+r", "stop": "ctrl+alt+r"})
+        self.assertEqual(self.app.hotkeys.bindings, {"read": "ctrl+alt+r", "stop": "ctrl+alt+s"})
         self.app.quit()
         t.join(3)
         self.assertFalse(t.is_alive())
