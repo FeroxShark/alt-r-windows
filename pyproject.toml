@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "altr"
+dynamic = ["version"]
+description = "Lee en voz alta el texto seleccionado con un atajo global (Alt+R). Windows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "edge-tts>=7.0",
+    "pystray>=0.19; sys_platform == 'win32'",
+    "Pillow>=10; sys_platform == 'win32'",
+]
+
+[project.scripts]
+altr = "altr.cli:main"
+
+[tool.setuptools]
+packages = ["altr"]
+
+[tool.setuptools.package-data]
+altr = ["config.default.toml"]
+
+[tool.setuptools.dynamic]
+version = { attr = "altr.__version__" }

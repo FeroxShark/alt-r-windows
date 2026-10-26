@@ -1,0 +1,143 @@
+# ============================================================================
+#  AltR - configuración
+#  Guardá el archivo y elegí "Recargar configuración" en el ícono de la
+#  bandeja (junto al reloj). No hace falta reiniciar.
+#  Los textos entre comillas "así"; los números sin comillas. Todo lo que
+#  borres de acá toma el valor por defecto.
+# ============================================================================
+
+[general]
+# Atajo para leer la selección. Combinaciones: alt, ctrl, shift, win + una tecla
+# (letra, número, f1..f24, space, enter, esc, tab, up, down, left, right...).
+# Ejemplos: "alt+r", "ctrl+alt+l", "win+shift+s"
+hotkey = "alt+r"
+
+# Atajo para cortar la lectura. Dejalo vacío ("") para no usar ninguno
+# (igual podés cortar desde el ícono de la bandeja).
+stop_hotkey = "ctrl+alt+r"
+
+# Si no hay nada seleccionado, leer lo que hay en el portapapeles.
+clipboard_fallback = true
+
+# AltR copia la selección con Ctrl+C. Si es true, después te devuelve el
+# portapapeles como estaba (sólo texto; una imagen copiada se pierde).
+restore_clipboard = true
+
+# Programas donde AltR NO manda Ctrl+C (en una terminal, Ctrl+C interrumpe lo que
+# esté corriendo). Ahí lee directamente el portapapeles: copiá el texto vos
+# (seleccionar y Ctrl+Shift+C, o clic derecho) y apretá el atajo.
+clipboard_only_apps = ["WindowsTerminal.exe", "cmd.exe", "powershell.exe", "pwsh.exe",
+                       "conhost.exe", "wezterm-gui.exe", "alacritty.exe", "mintty.exe"]
+
+# Avisos de Windows (globos de la bandeja) cuando algo falla.
+notifications = true
+
+
+[text]
+# Máximo de caracteres por lectura (el resto se descarta).
+max_chars = 20000
+
+# Quitar símbolos de Markdown (#, *, `, [texto](enlace)) para que no los deletree.
+strip_markdown = true
+
+# Si es false, las direcciones web (https://...) se dicen como "enlace".
+read_urls = false
+
+
+[tts]
+# Motor de voz:
+#   "edge"    - Microsoft Edge (gratis, sin clave, necesita internet). Por defecto.
+#   "openai"  - cualquier API compatible con OpenAI (OpenAI, o un servidor tuyo/local
+#               tipo Kokoro-FastAPI, LocalAI, openedai-speech...). Ver [openai].
+#   "command" - un programa local que vos elegís (Piper, etc.). Ver [command].
+provider = "edge"
+
+# Velocidad de lectura: 1.0 normal, 1.2 un 20% más rápido, 0.8 más lento.
+speed = 1.0
+
+# Volumen de reproducción de AltR, de 0 a 100.
+volume = 100
+
+
+[edge]
+# Voz. Para ver todas: abrí una terminal y corré  AltR --list-voices es-
+# Algunas en español: es-AR-ElenaNeural, es-AR-TomasNeural, es-ES-ElviraNeural,
+# es-ES-AlvaroNeural, es-MX-DaliaNeural, es-MX-JorgeNeural, es-CO-SalomeNeural,
+# es-US-PalomaNeural. También sirven las "multilingües" como
+# en-US-AvaMultilingualNeural, que leen español e inglés mezclados.
+voice = "es-AR-ElenaNeural"
+
+# Tono: "+0Hz" normal, "+10Hz" más agudo, "-10Hz" más grave.
+pitch = "+0Hz"
+
+# Proxy opcional, ej. "http://127.0.0.1:8080". Vacío = sin proxy.
+proxy = ""
+
+
+[openai]
+# Dirección base de la API. Termina en /v1 y NO incluye /audio/speech.
+#   OpenAI:                   "https://api.openai.com/v1"
+#   Servidor local (Kokoro):  "http://localhost:8880/v1"
+base_url = "https://api.openai.com/v1"
+
+# Modelo. Ejemplos: "gpt-4o-mini-tts", "tts-1", "tts-1-hd", "kokoro".
+# Poné el que acepte tu servidor.
+model = "gpt-4o-mini-tts"
+
+# Voz. En OpenAI: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer...
+# En un servidor local: la que ofrezca (ej. "ef_dora" en Kokoro).
+voice = "alloy"
+
+# NOMBRE de la variable de entorno donde guardás la clave (no pongas la clave acá).
+# Para crearla, en PowerShell:  setx OPENAI_API_KEY "sk-..."   y volvé a iniciar sesión.
+# Para un servidor local sin clave, dejalo vacío ("").
+api_key_env = "OPENAI_API_KEY"
+
+# Indicaciones de estilo (sólo gpt-4o-mini-tts), ej. "Hablá tranquilo y claro".
+instructions = ""
+
+# Formato de audio que pide AltR: "mp3" o "wav".
+response_format = "mp3"
+
+# Segundos de espera máxima por cada trozo de audio.
+timeout = 60
+
+
+[command]
+# Para motores locales por línea de comandos. AltR corre este programa una vez
+# por cada trozo de texto. Cada elemento va entre comillas; en las rutas de
+# Windows usá barras normales (C:/piper/piper.exe) o doble barra invertida.
+#
+# Se reemplazan estos textos:
+#   {output}        archivo de audio que tiene que generar el programa
+#   {text}          el texto (cuidado: textos largos pueden no entrar en la línea)
+#   {text_file}     archivo .txt con el texto
+#   {voice}         la voz de abajo
+#   {speed}         velocidad (1.0 = normal)
+#   {length_scale}  1 / velocidad (lo que usa Piper)
+#
+# Ejemplo con Piper (https://github.com/rhasspy/piper), el texto entra por stdin:
+#   args = ["C:/piper/piper.exe", "--model", "C:/piper/es_AR-daniela-high.onnx",
+#           "--length_scale", "{length_scale}", "--output_file", "{output}"]
+#   stdin = true
+#   output_ext = "wav"
+args = []
+
+# true: el texto entra por la entrada estándar (stdin), como hace Piper.
+stdin = true
+
+# Extensión del archivo que genera: "wav" o "mp3".
+output_ext = "wav"
+
+# Valor para {voice}.
+voice = ""
+
+# Segundos de espera máxima por cada trozo.
+timeout = 60
+
+
+[lexicon]
+# Cómo pronunciar palabras que el motor lee mal: palabra = "cómo se escribe para que suene bien".
+# Se aplica a palabras completas, sin distinguir mayúsculas. Ejemplos (sacá el # para usarlos):
+# github = "guitjab"
+# wifi = "uaifai"

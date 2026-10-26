@@ -1,0 +1,80 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # para publicar el release al subir un tag vX.Y.Z
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install edge-tts
+      - name: Tests (la parte de Windows se saltea)
+        run: python -m unittest discover -s tests -t . -v
+      - name: Sintaxis de la capa de Windows
+        run: python -m py_compile altr/win.py altr/tray.py altr/app.py
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: python -m pip install . pyinstaller
+      - name: Tests (incluye la capa de Windows y edge-tts real)
+        env:
+          ALTR_TEST_NETWORK: "1"
+        run: python -m unittest discover -s tests -t . -v
+      - name: Test con ventana real (Bloc de notas + Ctrl+C simulado)
+        continue-on-error: true   # informativo: depende de que el runner tenga escritorio
+        env:
+          ALTR_TEST_GUI: "1"
+        run: python -m unittest tests.test_win.WinTests.test_selection_capture_with_notepad -v
+      - name: Armar AltR.exe
+        run: pyinstaller --noconfirm altr.spec
+      - name: Probar el .exe (config, síntesis real, arranque residente)
+        shell: pwsh
+        env:
+          ALTR_HOME: ${{ runner.temp }}\altr-ci
+          ALTR_NO_OPEN: "1"
+        run: |
+          $exe = Resolve-Path dist\AltR.exe
+          $p = Start-Process $exe -ArgumentList "--check" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "--check devolvió $($p.ExitCode)" }
+          $out = Join-Path $env:RUNNER_TEMP "ci.mp3"
+          $p = Start-Process $exe -ArgumentList "--say","`"Hola, esto es una prueba.`"","--out","`"$out`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $out) -or (Get-Item $out).Length -lt 2000) { throw "--say falló" }
+          $app = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { throw "AltR se cerró solo (código $($app.ExitCode))" }
+          Get-Content (Join-Path $env:ALTR_HOME "altr.log")
+          Stop-Process -Id $app.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AltR-windows
+          path: |
+            dist/AltR.exe
+            install.ps1
+            altr/config.default.toml
+      - name: Publicar release (sólo con tag vX.Y.Z)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/AltR.exe install.ps1 altr/config.default.toml --generate-notes --title "AltR ${{ github.ref_name }}"
