@@ -112,9 +112,10 @@ class InstallerTests(unittest.TestCase):
                 updates.launch_installer(Path("install.ps1"))
 
     def test_launch_command(self):
+        script = Path("tmp") / "install.ps1"   # antes de parchear os.name: con "nt" Path() ya no se instancia en Linux
         with mock.patch.object(updates.os, "name", "nt"), \
                 mock.patch.object(updates.subprocess, "Popen") as popen:
-            updates.launch_installer(Path("C:/tmp/install.ps1"))
+            updates.launch_installer(script)
         cmd = popen.call_args.args[0]
         self.assertEqual(cmd[0], "powershell.exe")
         self.assertIn("Bypass", cmd)

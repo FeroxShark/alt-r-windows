@@ -13,6 +13,7 @@ permissions:
 jobs:
   test-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         python: ["3.11", "3.13"]
@@ -22,18 +23,24 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Librerías de sistema para Qt (offscreen)
+        timeout-minutes: 5
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
-      - run: python -m pip install edge-tts PySide6-Essentials tomlkit keyring
+      - name: Dependencias de Python
+        timeout-minutes: 5
+        run: python -m pip install edge-tts PySide6-Essentials tomlkit keyring
       - name: Tests (la parte de Windows se saltea; el overlay corre con Qt offscreen)
+        timeout-minutes: 3
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m unittest discover -s tests -t . -v
       - name: Demo del overlay (offscreen) y captura
+        timeout-minutes: 3
         env:
           QT_QPA_PLATFORM: offscreen
           ALTR_HOME: ${{ runner.temp }}/altr-ci
         run: python -m altr --demo-overlay --screenshot "$RUNNER_TEMP/overlay-linux.png"
       - name: Ventana de Configuración (offscreen) y captura
+        timeout-minutes: 3
         env:
           QT_QPA_PLATFORM: offscreen
           ALTR_HOME: ${{ runner.temp }}/altr-ci
@@ -49,47 +56,80 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Instalar dependencias
+        timeout-minutes: 5
         run: python -m pip install . pyinstaller
       - name: Tests (incluye la capa de Windows y edge-tts real)
+        timeout-minutes: 5
         env:
           ALTR_TEST_NETWORK: "1"
         run: python -m unittest discover -s tests -t . -v
       - name: Test con ventana real (Bloc de notas + Ctrl+C simulado)
+        timeout-minutes: 3
         continue-on-error: true   # informativo: depende de que el runner tenga escritorio
         env:
           ALTR_TEST_GUI: "1"
         run: python -m unittest tests.test_win.WinTests.test_selection_capture_with_notepad -v
+      - name: Cerrar el Bloc de notas que pudo dejar el test anterior
+        timeout-minutes: 2
+        continue-on-error: true
+        shell: pwsh
+        run: Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
       - name: Armar AltR.exe
-        run: pyinstaller --noconfirm altr.spec
+        timeout-minutes: 10   # arma en ~1,5 min; pasarse de 10 es un cuelgue, no lentitud
+        shell: pwsh
+        run: |
+          # el log va también a un archivo: si el paso se corta por el timeout queda subido como artefacto
+          pyinstaller --noconfirm altr.spec 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\pyinstaller.log"
+          if ($LASTEXITCODE -ne 0) { throw "pyinstaller devolvió $LASTEXITCODE" }
+      - name: Subir el log de pyinstaller (sólo si algo falló)
+        if: failure() || cancelled()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyinstaller-log
+          path: ${{ runner.temp }}\pyinstaller.log
+          if-no-files-found: ignore
       - name: Probar el .exe (config, síntesis real, arranque residente)
+        timeout-minutes: 5
         shell: pwsh
         env:
           ALTR_HOME: ${{ runner.temp }}\altr-ci
           ALTR_NO_OPEN: "1"
         run: |
           $exe = Resolve-Path dist\AltR.exe
-          $p = Start-Process $exe -ArgumentList "--check" -Wait -PassThru
+          # el .exe no tiene consola: si una ventana quedara esperando, Start-Process -Wait colgaría el paso.
+          # Cada corrida tiene su tope.
+          function Run-Exe([string[]]$ArgList, [int]$Seconds = 60) {
+            $proc = Start-Process $exe -ArgumentList $ArgList -PassThru
+            if (-not $proc.WaitForExit($Seconds * 1000)) {
+              $proc | Stop-Process -Force
+              throw "AltR $($ArgList -join ' ') no terminó en $Seconds s (colgado)"
+            }
+            return $proc
+          }
+          $p = Run-Exe @("--check")
           if ($p.ExitCode -ne 0) { throw "--check devolvió $($p.ExitCode)" }
           $out = Join-Path $env:RUNNER_TEMP "ci.mp3"
-          $p = Start-Process $exe -ArgumentList "--say","`"Hola, esto es una prueba.`"","--out","`"$out`"" -Wait -PassThru
+          $p = Run-Exe @("--say","`"Hola, esto es una prueba.`"","--out","`"$out`"")
           if ($p.ExitCode -ne 0 -or -not (Test-Path $out) -or (Get-Item $out).Length -lt 2000) { throw "--say falló" }
           # el overlay: el .exe abre la ventana con una lectura de mentira y comprueba que se crea,
           # se dibuja, pausa, salta y se cierra (sale con 0 si anduvo; el detalle queda en salida.txt)
           $shot = Join-Path $env:RUNNER_TEMP "overlay-windows.png"
-          $p = Start-Process $exe -ArgumentList "--demo-overlay","--screenshot","`"$shot`"" -Wait -PassThru
+          $p = Run-Exe @("--demo-overlay","--screenshot","`"$shot`"")
           $salida = Join-Path $env:ALTR_HOME "salida.txt"
           if (Test-Path $salida) { Get-Content $salida }
           if ($p.ExitCode -ne 0) { throw "--demo-overlay devolvió $($p.ExitCode): el overlay no se creó o no funcionó" }
           if (-not (Test-Path $shot) -or (Get-Item $shot).Length -lt 3000) { throw "--demo-overlay no dejó la captura del overlay" }
           # la ventana de Configuración: igual, el .exe la abre, comprueba que el formulario refleja el config y sale
           $shotCfg = Join-Path $env:RUNNER_TEMP "configuracion-windows.png"
-          $p = Start-Process $exe -ArgumentList "--settings","atajos","--screenshot","`"$shotCfg`"" -Wait -PassThru
+          $p = Run-Exe @("--settings","atajos","--screenshot","`"$shotCfg`"")
           if (Test-Path $salida) { Get-Content $salida }
           if ($p.ExitCode -ne 0) { throw "--settings devolvió $($p.ExitCode): la ventana de configuración no cargó" }
           if (-not (Test-Path $shotCfg) -or (Get-Item $shotCfg).Length -lt 3000) { throw "--settings no dejó la captura" }
@@ -99,6 +139,7 @@ jobs:
           Get-Content (Join-Path $env:ALTR_HOME "altr.log")
           Stop-Process -Id $app.Id -Force
       - name: Probar install.ps1 como "irm | iex" (PowerShell 5.1 y 7), contra el .exe recién armado
+        timeout-minutes: 8
         env:
           ALTR_NO_OPEN: "1"
           ALTR_EXE: ${{ github.workspace }}\dist\AltR.exe
@@ -140,6 +181,7 @@ jobs:
             install.ps1
             altr/config.default.toml
       - name: Publicar release (sólo con tag vX.Y.Z)
+        timeout-minutes: 5
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:

@@ -44,7 +44,10 @@ a = Analysis(
                    "keyring", "keyring.backends.Windows", "altr.demo", "altr.app",
                    "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "PySide6.QtQml",
                    "PySide6.QtQuick"],
-    excludes=["tkinter", "unittest", "pydoc", "test"] + [f"PySide6.{m}" for m in QT_UNUSED],
+    # keyring arrastra jaraco.* -> setuptools (y sus hooks, que importan medio árbol) y, en Linux, secretstorage/
+    # cryptography/gi; en Windows sólo hace falta keyring.backends.Windows (win32ctypes). Se dejan afuera.
+    excludes=["tkinter", "unittest", "pydoc", "test", "setuptools", "pkg_resources", "distutils",
+              "secretstorage", "jeepney", "cryptography", "gi", "dbus"] + [f"PySide6.{m}" for m in QT_UNUSED],
 )
 a.datas = [d for d in a.datas if _keep(d)]
 a.binaries = [b for b in a.binaries if _keep(b)]
