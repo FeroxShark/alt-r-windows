@@ -20,14 +20,16 @@ Es el port a Windows de la función "Alt+R" de un asistente de voz para Linux.
 Abrí **PowerShell** (no hace falta ser administrador) y pegá:
 
 ```powershell
-irm https://github.com/FeroxShark/alt-r-windows/releases/latest/download/install.ps1 | iex
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/FeroxShark/alt-r-windows/main/install.ps1 | iex
 ```
 
-Descarga `AltR.exe`, lo deja en `%LOCALAPPDATA%\AltR`, crea un acceso directo en el menú Inicio y lo arranca.
+(La primera parte fuerza TLS 1.2: Windows PowerShell 5.1 a veces arranca con un TLS viejo que GitHub rechaza.
+Sirve en Windows PowerShell 5.1 y en PowerShell 7. Se baja de la rama `main` y no del release porque GitHub
+entrega los archivos de un release como binario y `irm` no los lee como texto.) Descarga `AltR.exe`, lo deja en `%LOCALAPPDATA%\AltR`, crea un acceso directo en el menú Inicio y lo arranca.
 Para que además **arranque solo con Windows**:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/FeroxShark/alt-r-windows/releases/latest/download/install.ps1))) -Autostart
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/FeroxShark/alt-r-windows/main/install.ps1))) -Autostart
 ```
 
 ### Opción B — bajar el `.exe` a mano
@@ -219,6 +221,15 @@ Con la instalación desde código fuente: `py -3 -m altr …`. Sin consola (el `
 
 ## Problemas comunes
 
+- **Alt+R choca con NVIDIA.** El overlay de rendimiento de la NVIDIA App / GeForce Experience usa Alt+R por
+  defecto y se queda con el atajo (AltR lo avisa con un globo y en el registro: «No pude registrar el atajo»).
+  Dos salidas: (1) cambiar el atajo de AltR: ícono → *Abrir configuración* → `hotkey = "ctrl+alt+l"` → ícono →
+  *Recargar configuración*; o (2) apagar el de NVIDIA: NVIDIA App → *Configuración* → *Funciones* → *Overlay* →
+  *Atajos de teclado* (o GeForce Experience → engranaje → *Superposición en el juego* → *Atajos de teclado*) y
+  cambiá o quitá «Mostrar/Ocultar el rendimiento».
+- **Con `alt+<letra>` en Firefox no lee (o se abre la barra de menús).** Firefox muestra su barra de menús al
+  soltar Alt y esa pulsación se come el Ctrl+C. AltR mete una tecla intermedia para evitarlo; si en tu caso igual
+  pasa, usá un atajo con `ctrl` (`"ctrl+alt+l"`), que Firefox no interpreta como menú.
 - **Alt+R no hace nada.** Mirá el aviso del globo o el registro (ícono → *Abrir registro*). Si dice "otro programa ya
   usa ese atajo", cambiá `hotkey` en el config (por ejemplo `"ctrl+alt+l"`) y recargá.
 - **Dice "No hay texto seleccionado".** Algunos programas no responden a `Ctrl+C` (juegos, apps con permisos de
@@ -243,7 +254,7 @@ Con la instalación desde código fuente: `py -3 -m altr …`. Sin consola (el `
 Con el instalador:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/FeroxShark/alt-r-windows/releases/latest/download/install.ps1))) -Uninstall
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/FeroxShark/alt-r-windows/main/install.ps1))) -Uninstall
 ```
 
 (agregá `-Purge` para borrar también tu configuración en `%APPDATA%\AltR`). A mano: ícono → *Iniciar con Windows*

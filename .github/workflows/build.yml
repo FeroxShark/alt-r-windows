@@ -64,6 +64,34 @@ jobs:
           if ($app.HasExited) { throw "AltR se cerró solo (código $($app.ExitCode))" }
           Get-Content (Join-Path $env:ALTR_HOME "altr.log")
           Stop-Process -Id $app.Id -Force
+      - name: Probar install.ps1 como "irm | iex" (PowerShell 5.1 y 7), contra el .exe recién armado
+        env:
+          ALTR_NO_OPEN: "1"
+          ALTR_EXE: ${{ github.workspace }}\dist\AltR.exe
+        run: |
+          foreach ($shell in "powershell.exe", "pwsh") {
+            Write-Host "=== $shell ==="
+            foreach ($mode in "iex", "scriptblock") {
+              # 1) Get-Content -Raw | iex  (igual que irm | iex: el texto llega como string, sin $PSScriptRoot)
+              # 2) scriptblock con parámetros
+              $cmd = if ($mode -eq "iex") {
+                'Get-Content -Raw -Encoding UTF8 install.ps1 | iex'
+              } else {
+                '& ([scriptblock]::Create((Get-Content -Raw -Encoding UTF8 install.ps1))) -Autostart'
+              }
+              & $shell -NoProfile -Command "`$ErrorActionPreference='Stop'; $cmd; if (Get-Command Install-AltR -ErrorAction SilentlyContinue) { throw 'quedó la función en la sesión' }; Write-Host 'sigue viva la consola'"
+              if ($LASTEXITCODE -ne 0) { throw "install.ps1 ($mode) falló en $shell ($LASTEXITCODE)" }
+              if (-not (Test-Path "$env:LOCALAPPDATA\AltR\AltR.exe")) { throw "no quedó AltR.exe ($mode, $shell)" }
+              Start-Sleep -Seconds 3
+              if (-not (Get-Process -Name AltR -ErrorAction SilentlyContinue)) { throw "AltR no quedó corriendo ($mode, $shell)" }
+              if ($mode -eq "scriptblock" -and -not (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run").AltR) { throw "falta la clave Run" }
+              $env:ALTR_UNINSTALL = "1"
+              & $shell -NoProfile -Command "Get-Content -Raw -Encoding UTF8 install.ps1 | iex"
+              Remove-Item Env:\ALTR_UNINSTALL
+              if ($LASTEXITCODE -ne 0) { throw "desinstalar falló en $shell" }
+              if (Test-Path "$env:LOCALAPPDATA\AltR\AltR.exe") { throw "no se desinstaló ($mode, $shell)" }
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: AltR-windows

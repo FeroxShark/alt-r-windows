@@ -127,7 +127,7 @@ class App:
             log.info("AltR ya está corriendo; salgo.")
             return 0
         log.info("AltR %s arrancando; config: %s", __version__, self.config_path)
-        self.hotkeys = self.platform.HotkeyManager(self.on_hotkey, on_error=self.notify)
+        self.hotkeys = self.platform.HotkeyManager(self.on_hotkey, on_error=lambda m: self.notify(m, force=True))
         if self.tray_factory:
             self.tray = self.tray_factory(self)
         self.hotkeys.start(self._bindings())

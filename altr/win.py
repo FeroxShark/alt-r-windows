@@ -219,7 +219,9 @@ def capture_selection(restore: bool = True, fallback: bool = True,
 
     # Si el usuario todavía tiene Alt apretado, Windows abriría el menú de la ventana al
     # soltarlo: una tecla intermedia "sin asignar" lo evita.
-    send_keys([(VK_MASK, False), (VK_MASK, True)])
+    # Firefox ignora la tecla "sin asignar": con Alt+T/Alt+letra mostraba la barra de menús al soltar
+    # Alt y el Ctrl+C se iba al menú. Una pulsación de Ctrl sí cuenta como "otra tecla" para él.
+    send_keys([(VK_MASK, False), (VK_MASK, True), (VK_CONTROL, False), (VK_CONTROL, True)])
     deadline = time.monotonic() + 1.0
     mods = (VK_MENU, VK_SHIFT, VK_CONTROL, VK_LWIN, VK_RWIN)
     while time.monotonic() < deadline and any(_is_down(m) for m in mods):
@@ -229,10 +231,13 @@ def capture_selection(restore: bool = True, fallback: bool = True,
         send_keys([(m, True) for m in held])
 
     before = clipboard_sequence()
-    send_keys([(VK_CONTROL, False), (VK_C, False), (VK_C, True), (VK_CONTROL, True)])
-    t_end = time.monotonic() + 0.5
-    while time.monotonic() < t_end and clipboard_sequence() == before:
-        time.sleep(0.01)
+    for _attempt in range(2):  # apps lentas o que recién recuperan el foco: un segundo intento
+        send_keys([(VK_CONTROL, False), (VK_C, False), (VK_C, True), (VK_CONTROL, True)])
+        t_end = time.monotonic() + (0.35 if _attempt == 0 else 0.5)
+        while time.monotonic() < t_end and clipboard_sequence() == before:
+            time.sleep(0.01)
+        if clipboard_sequence() != before:
+            break
     if clipboard_sequence() == before:
         return (old_text or "") if fallback else ""
     time.sleep(0.03)  # que la app termine de escribir
@@ -291,15 +296,24 @@ class HotkeyManager:
         for n, (name, text) in enumerate(bindings.items(), start=1):
             if not text.strip():
                 continue
-            mods, vk = parse_hotkey(text)
+            try:
+                mods, vk = parse_hotkey(text)
+            except ValueError as e:
+                log.error("atajo %s inválido: %s", text, e)
+                self.on_error(f"El atajo {text} no es válido ({e}). Corregilo en el config.toml.")
+                continue
             if user32.RegisterHotKey(None, n, mods | MOD_NOREPEAT, vk):
                 self._names[n] = name
             else:
                 err = ctypes.get_last_error()
                 why = ("otro programa ya usa ese atajo" if err == ERROR_HOTKEY_ALREADY_REGISTERED
-                       else f"error {err}")
-                self.on_error(f"No pude registrar el atajo {text} ({why}). "
-                              "Cambialo en el config.toml.")
+                       else f"error de Windows {err}")
+                hint = (" Es el atajo del overlay de NVIDIA (GeForce Experience / NVIDIA App): "
+                        "apagalo ahí, o" if text.strip().lower() == "alt+r" else "")
+                msg = (f"No pude registrar el atajo {text} ({why}).{hint} "
+                       "Cambiá `hotkey` en el config.toml (por ejemplo \"ctrl+alt+l\") y recargá.")
+                log.error("RegisterHotKey(%s) falló: %s (%s)", text, why, err)
+                self.on_error(msg)
 
     def _run(self) -> None:
         msg = wintypes.MSG()
