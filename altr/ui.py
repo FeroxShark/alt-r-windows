@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -23,7 +24,7 @@ from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter, QP
 from PySide6.QtQuick import QQuickView, QQuickWindow, QSGRendererInterface
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import __version__
+from . import __version__, updates
 
 log = logging.getLogger("altr")
 
@@ -297,6 +298,69 @@ class UiHost:
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self._activated)
         self.tray.show()
+        self.settings = None
+        self.req_timer = QTimer()    # `AltR --settings` con este AltR corriendo deja un pedido en un archivo
+        self.req_timer.setInterval(1000)
+        self.req_timer.timeout.connect(self._poll_settings_request)
+        self.req_timer.start()
+        self._update_toast = False   # el globo que está en pantalla es el de "hay versión nueva"
+        self.tray.messageClicked.connect(self._message_clicked)
+        QTimer.singleShot(20000, self.check_updates_quietly)
+
+    # --- actualizaciones: chequeo silencioso una vez por día ---
+    def check_updates_quietly(self) -> None:
+        if not self.app.cfg.general.check_updates or not updates.due():
+            return
+
+        def work():
+            try:
+                info = updates.check_latest()
+            except Exception as e:
+                log.info("chequeo de actualizaciones: %s", e)
+                updates.record_check(None)
+                return
+            updates.record_check(info["version"])
+            if info["newer"]:
+                log.info("hay una versión nueva: %s (instalada %s)", info["version"], __version__)
+                self.dispatch.post(lambda: self._notify_update(info["version"]))
+
+        threading.Thread(target=work, name="altr-update-check", daemon=True).start()
+
+    def _notify_update(self, version: str) -> None:
+        self._update_toast = True
+        self.tray.showMessage(
+            "AltR", f"Hay una versión nueva ({version}). Tocá acá para actualizar desde Configuración.",
+            QSystemTrayIcon.MessageIcon.Information, 8000)
+
+    def _message_clicked(self) -> None:
+        if self._update_toast:
+            self._update_toast = False
+            self._open_settings("general")
+
+    def open_settings(self, section: str | None = None) -> None:
+        """Abre (o trae al frente) la ventana de Configuración. Cualquier hilo."""
+        self.dispatch.post(lambda: self._open_settings(section))
+
+    def _open_settings(self, section: str | None) -> None:
+        from .settings import SettingsWindow
+
+        if self.settings is None:
+            self.settings = SettingsWindow(
+                self.app.config_path, platform=self.app.platform,
+                on_saved=lambda: self.app.reload(quiet=True), stop_reading=self.app.reader.stop,
+                on_capture=self.app.suspend_hotkeys)
+        if not self.settings.created:
+            self.notify("No pude abrir la ventana de configuración; abro el config.toml.")
+            self.app.open_config()
+            return
+        self.settings.show(section)
+
+    def _poll_settings_request(self) -> None:
+        from .settings import take_request
+
+        section = take_request()
+        if section is not None:
+            self._open_settings(section or None)
 
     def _build_menu(self) -> QMenu:
         app, menu = self.app, QMenu()
@@ -311,7 +375,8 @@ class UiHost:
         act("Detener lectura", app.reader.stop)
         act("Leer el portapapeles", app.read_clipboard)
         menu.addSeparator()
-        act("Abrir configuración", app.open_config)
+        act("Configuración…", app.open_settings)
+        act("Abrir config.toml", app.open_config)
         act("Recargar configuración", app.reload)
         act("Abrir registro (log)", app.open_log)
         get = getattr(app.platform, "autostart_enabled", None)
@@ -341,13 +406,16 @@ class UiHost:
         self.qapp.exec()
         self.tray.hide()
         self.overlay.timer.stop()
+        self.req_timer.stop()
 
     def stop(self) -> None:
         self.dispatch.post(self.qapp.quit)
 
     def notify(self, message: str, title: str = "AltR") -> None:
-        self.dispatch.post(lambda: self.tray.showMessage(
-            title, message, QSystemTrayIcon.MessageIcon.Information, 6000))
+        def show():
+            self._update_toast = False
+            self.tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 6000)
+        self.dispatch.post(show)
 
     def set_speaking(self, speaking: bool) -> None:
         def apply():

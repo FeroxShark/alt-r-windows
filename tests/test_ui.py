@@ -192,7 +192,7 @@ class HostTests(unittest.TestCase):
             app = App(Path(d) / "config.toml", FakePlatform(), backend=FakeBackend())
             host = ui.UiHost(app)
             labels = [a.text() for a in host.menu.actions() if a.text()]
-            for want in ("Detener lectura", "Leer el portapapeles", "Abrir configuración",
+            for want in ("Detener lectura", "Leer el portapapeles", "Configuración…",
                          "Recargar configuración", "Salir"):
                 self.assertIn(want, labels)
             host.set_speaking(True)

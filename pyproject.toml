@@ -12,6 +12,8 @@ license = { text = "MIT" }
 dependencies = [
     "edge-tts>=7.0",
     "PySide6-Essentials>=6.6",
+    "tomlkit>=0.12",
+    "keyring>=24",
 ]
 
 [project.scripts]
@@ -21,7 +23,7 @@ altr = "altr.cli:main"
 packages = ["altr"]
 
 [tool.setuptools.package-data]
-altr = ["config.default.toml", "qml/*.qml", "qml/fonts/*"]
+altr = ["config.default.toml", "qml/*.qml", "qml/settings/*.qml", "qml/fonts/*"]
 
 [tool.setuptools.dynamic]
 version = { attr = "altr.__version__" }

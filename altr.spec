@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_data_files
 
 datas = [
     ("altr/config.default.toml", "altr"),
-    ("altr/qml", "altr/qml"),          # Overlay.qml + las fuentes Inter
+    ("altr/qml", "altr/qml"),          # Overlay.qml, settings/Settings.qml y las fuentes Inter
 ] + collect_data_files("certifi")
 
 # Qt de más: AltR sólo usa QtCore/QtGui/QtWidgets (bandeja) y QtQuick/QtQml (overlay, render por
@@ -40,7 +40,8 @@ a = Analysis(
     ["run_altr.py"],
     pathex=["."],
     datas=datas,
-    hiddenimports=["altr.win", "altr.ui", "altr.demo", "altr.app",
+    hiddenimports=["altr.win", "altr.ui", "altr.settings", "altr.updates", "altr.secrets", "tomlkit",
+                   "keyring", "keyring.backends.Windows", "altr.demo", "altr.app",
                    "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "PySide6.QtQml",
                    "PySide6.QtQuick"],
     excludes=["tkinter", "unittest", "pydoc", "test"] + [f"PySide6.{m}" for m in QT_UNUSED],

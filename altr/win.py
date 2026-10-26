@@ -442,6 +442,35 @@ def single_instance() -> bool:
     return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
 
 
+kernel32.OpenMutexW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.OpenMutexW.restype = wintypes.HANDLE
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+SYNCHRONIZE = 0x00100000
+
+
+def instance_running() -> bool:
+    """True si ya hay un AltR residente (sin tomar el mutex: sirve para `AltR --settings`)."""
+    h = kernel32.OpenMutexW(SYNCHRONIZE, False, "Local\\AltR-single-instance")
+    if h:
+        kernel32.CloseHandle(h)
+        return True
+    return False
+
+
+def hotkey_available(text: str) -> bool | None:
+    """¿Se puede registrar este atajo ahora? False = otro programa lo tiene. None = no se pudo
+    comprobar (atajo inválido). Ojo: los atajos del propio AltR también dan False."""
+    try:
+        mods, vk = parse_hotkey(text)
+    except ValueError:
+        return None
+    probe = 0xBFFE  # id de prueba, fuera del rango que usa HotkeyManager (1, 2...)
+    if user32.RegisterHotKey(None, probe, mods | MOD_NOREPEAT, vk):
+        user32.UnregisterHotKey(None, probe)
+        return True
+    return False if ctypes.get_last_error() == ERROR_HOTKEY_ALREADY_REGISTERED else None
+
+
 def open_path(path: Path) -> None:
     os.startfile(str(path))  # noqa: S606 - abre con el programa asociado
 

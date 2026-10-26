@@ -53,7 +53,7 @@ class App:
     def _bindings(self) -> dict[str, str]:
         return {"read": self.cfg.general.hotkey, "stop": self.cfg.general.stop_hotkey}
 
-    def reload(self) -> None:
+    def reload(self, quiet: bool = False) -> None:
         try:
             cfg = self._load_or_default()
         except ConfigError as e:
@@ -65,6 +65,8 @@ class App:
             self.hotkeys.reload(self._bindings())
         if self.tray and hasattr(self.tray, "apply_config"):
             self.tray.apply_config(cfg)
+        if quiet and not cfg.warnings:
+            return
         msg = "Configuración recargada."
         if cfg.warnings:
             msg += " Avisos: " + " ".join(cfg.warnings)
@@ -110,6 +112,18 @@ class App:
             self.notify("El portapapeles no tiene texto.")
             return
         self.reader.speak(text)
+
+    def open_settings(self, section: str | None = None) -> None:
+        if self.tray and hasattr(self.tray, "open_settings"):
+            self.tray.open_settings(section)
+        else:
+            self.open_config()
+
+    def suspend_hotkeys(self, suspend: bool) -> None:
+        """Suelta (o vuelve a tomar) los atajos globales; la ventana de Configuración lo usa al
+        capturar un atajo nuevo."""
+        if self.hotkeys:
+            self.hotkeys.reload({} if suspend else self._bindings())
 
     def open_config(self) -> None:
         self.platform.open_path(self.config_path)

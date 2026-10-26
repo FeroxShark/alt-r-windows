@@ -76,8 +76,8 @@ O para probarlo sin instalar nada: `py -3 -m pip install .` y después `py -3 -m
 
 (El atajo no es `Alt+R` a secas porque la NVIDIA App lo reserva para su overlay; ver *Problemas comunes*.)
 
-Clic derecho en el ícono: **Detener lectura** · **Leer el portapapeles** · **Abrir configuración** ·
-**Recargar configuración** · **Abrir registro (log)** · **Iniciar con Windows** · **Salir**.
+Clic derecho en el ícono: **Detener lectura** · **Leer el portapapeles** · **Configuración…** ·
+**Abrir config.toml** · **Recargar configuración** · **Abrir registro (log)** · **Iniciar con Windows** · **Salir**.
 (Clic izquierdo = detener.) El ícono se pone verde mientras lee.
 
 Cómo funciona: AltR simula un `Ctrl+C` en la ventana activa, lee lo copiado y te **devuelve el portapapeles
@@ -87,10 +87,39 @@ apretá Ctrl+Alt+R para leer el portapapeles.
 
 ---
 
+## Actualizar
+
+- **Desde la ventana:** Configuración → *General* → **Buscar actualizaciones**. Si hay una versión nueva aparece
+  **Actualizar**: baja `install.ps1` de este repo y lo corre en un PowerShell aparte (cierra AltR, reemplaza el
+  `.exe` y lo vuelve a abrir).
+- **Aviso automático:** al arrancar, una vez por día, AltR mira si hay una versión nueva y te lo dice con un globo
+  de la bandeja. Se apaga con `check_updates = false` en `[general]` o desde *General*.
+- **A mano:** volvé a correr el comando de instalación (arriba). **La configuración se conserva.**
+
+---
+
 ## Configuración
 
+### La ventana
+
+Clic derecho en el ícono → **Configuración…** (o `AltR.exe --settings`). Tiene cinco secciones:
+
+- **Atajos**: se cambian apretando el atajo nuevo (te avisa si otro programa ya lo usa).
+- **Voz**: motor, voz (filtrable por idioma), velocidad, volumen y **Probar voz**.
+- **Modelo / API**: dirección, modelo y clave de una API compatible con OpenAI. La clave se guarda en el
+  Administrador de credenciales de Windows, nunca en el `config.toml`.
+- **Overlay**: activar, posición, opacidad, tamaño de letra y una vista previa en vivo de la cápsula.
+- **General**: iniciar con Windows, avisos, versión instalada, **Buscar actualizaciones** y *Abrir config.toml*.
+
+![Ventana de Configuración](docs/settings.png)
+
+*Guardar y aplicar* escribe el `config.toml` (conserva sus comentarios y todo lo que la ventana no toca) y
+recarga AltR al instante.
+
+### El archivo
+
 El archivo está en **`%APPDATA%\AltR\config.toml`** (se crea solo la primera vez, con comentarios).
-Ábrilo desde el ícono → *Abrir configuración*, editalo, guardalo y elegí *Recargar configuración*.
+También podés editarlo a mano: ícono → *Abrir config.toml*, guardalo y elegí *Recargar configuración*.
 Lo que borres toma el valor por defecto. Si te equivocás, AltR te avisa y sigue con la configuración anterior.
 
 ### `[general]`
@@ -103,6 +132,7 @@ Lo que borres toma el valor por defecto. Si te equivocás, AltR te avisa y sigue
 | `restore_clipboard` | `true` | Devolver el portapapeles como estaba tras copiar la selección. |
 | `clipboard_only_apps` | terminales | Programas donde no se manda `Ctrl+C` (se lee el portapapeles). |
 | `notifications` | `true` | Globos de aviso cuando algo falla. |
+| `check_updates` | `true` | Al arrancar, una vez por día, mira si hay una versión nueva en GitHub y avisa con un globo (no instala nada solo). |
 
 ### `[overlay]` — la cápsula de lectura
 
@@ -223,6 +253,7 @@ AltR.exe --demo-overlay [--screenshot a.png]   abre el overlay con una lectura d
 AltR.exe --say "Hola" [--out a.mp3]   lee un texto (o lo guarda) sin atajos ni bandeja: sirve para probar voces
 AltR.exe --list-voices es-AR    voces de Edge
 AltR.exe --config-path          dónde está el config
+AltR.exe --settings [seccion] [--screenshot a.png]   abre la ventana de Configuración (atajos, voz, api, overlay, general); con --screenshot guarda una captura y sale
 AltR.exe --install-autostart / --remove-autostart
 AltR.exe --config otro.toml     usa otro archivo de configuración
 ```
@@ -307,6 +338,10 @@ altr/
   cli.py        línea de comandos y arranque
   app.py        aplicación residente (atajos + lector + bandeja)
   ui.py         Qt (PySide6): ícono de bandeja y overlay (QQuickView); un solo QApplication
+  settings.py   ventana de Configuración: modelo (SettingsController, edita el toml con tomlkit) y vista
+  qml/settings/Settings.qml  la vista de la ventana (sólo `import QtQuick`)
+  updates.py    actualizaciones: último release de GitHub, chequeo diario, instalador
+  secrets.py    clave de la API en el Administrador de credenciales (keyring)
   qml/Overlay.qml  el overlay (port del de Quickshell de Linux) y qml/fonts/ (Inter, OFL)
   demo.py       --demo-overlay: lectura de prueba y comprobaciones del overlay
   audio.py      duración y onda aproximada de cada trozo

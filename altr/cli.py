@@ -134,7 +134,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-tray", action="store_true", help="sin ícono de bandeja ni overlay")
     p.add_argument("--demo-overlay", action="store_true",
                    help="abre el overlay con una lectura de mentira, lo prueba y sale (0 = bien)")
-    p.add_argument("--screenshot", metavar="PNG", help="con --demo-overlay: guarda una captura del overlay")
+    p.add_argument("--screenshot", metavar="PNG",
+                   help="con --demo-overlay o --settings: guarda una captura de la ventana y sale")
+    p.add_argument("--settings", nargs="?", const="", metavar="SECCION",
+                   help="abre la ventana de configuración (secciones: atajos, voz, api, overlay, general)")
     p.add_argument("-v", "--verbose", action="store_true", help="registro detallado")
     return p
 
@@ -180,6 +183,9 @@ def _run(args, out: _Out) -> int:
         out("AltR arrancará con Windows." if args.install_autostart else "AltR ya no arranca con Windows.")
         return 0
 
+    if args.settings is not None:
+        return _run_settings(args, config_path, out)
+
     ensure_config(config_path)
     try:
         cfg = load_config(config_path)
@@ -219,3 +225,19 @@ def _run(args, out: _Out) -> int:
         from .ui import UiHost
         tray_factory = UiHost
     return App(config_path, win, tray_factory=tray_factory).run()
+
+
+def _run_settings(args, config_path: Path, out: _Out) -> int:
+    from . import settings
+
+    platform = None
+    if os.name == "nt":
+        from . import win
+        platform = win
+        # con un AltR residente la ventana se abre en SU proceso (guarda y recarga ahí mismo)
+        if args.screenshot is None and win.instance_running():
+            ensure_config(config_path)
+            settings.request_open(args.settings or None)
+            return 0
+    return settings.run_settings(config_path, screenshot=args.screenshot,
+                                 section=args.settings or None, say=out, platform=platform)

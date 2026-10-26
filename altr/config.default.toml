@@ -33,6 +33,10 @@ clipboard_only_apps = ["WindowsTerminal.exe", "cmd.exe", "powershell.exe", "pwsh
 # Avisos de Windows (globos de la bandeja) cuando algo falla.
 notifications = true
 
+# Una vez por día, al arrancar, AltR mira en GitHub si hay una versión nueva y te avisa con
+# un globo (no baja ni instala nada solo: eso lo hacés vos desde Configuración > General).
+check_updates = true
+
 
 [text]
 # Máximo de caracteres por lectura (el resto se descarta).

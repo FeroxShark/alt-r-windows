@@ -80,12 +80,16 @@ class OpenAIProvider:
         self.key_env = c.api_key_env.strip()
 
     def _api_key(self) -> str:
-        if not self.key_env:
-            return ""
-        key = os.environ.get(self.key_env, "").strip()
+        """La variable de entorno manda; si no está, la clave guardada desde la ventana de
+        Configuración (Administrador de credenciales)."""
+        key = os.environ.get(self.key_env, "").strip() if self.key_env else ""
         if not key:
-            raise TTSError(f"Falta la variable de entorno {self.key_env} con tu API key "
-                           f"(PowerShell: setx {self.key_env} \"tu-clave\", y volvé a iniciar sesión).")
+            from . import secrets
+            key = secrets.get_api_key()
+        if not key and self.key_env:
+            raise TTSError(f"Falta tu API key: guardala en Configuración → Modelo / API, o creá la "
+                           f"variable de entorno {self.key_env} (PowerShell: setx {self.key_env} "
+                           f"\"tu-clave\", y volvé a iniciar sesión).")
         return key
 
     def synthesize(self, text: str, out_dir: Path, name: str) -> Path:
@@ -165,12 +169,18 @@ def make_provider(cfg: Config):
             "command": CommandProvider}[cfg.tts.provider](cfg)
 
 
-def list_edge_voices(prefix: str = "") -> list[str]:
+def list_edge_voice_infos() -> list[dict]:
+    """Todas las voces de Edge: [{name, gender, locale}], ordenadas por nombre (necesita internet)."""
     import asyncio
 
     import edge_tts
 
     voices = asyncio.run(edge_tts.list_voices())
+    return sorted(({"name": v["ShortName"], "gender": v["Gender"], "locale": v["Locale"]}
+                   for v in voices), key=lambda v: v["name"])
+
+
+def list_edge_voices(prefix: str = "") -> list[str]:
     prefix = prefix.lower()
-    return sorted(f"{v['ShortName']}  ({v['Gender']}, {v['Locale']})"
-                  for v in voices if v["ShortName"].lower().startswith(prefix))
+    return [f"{v['name']}  ({v['gender']}, {v['locale']})"
+            for v in list_edge_voice_infos() if v["name"].lower().startswith(prefix)]
