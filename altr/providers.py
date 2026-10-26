@@ -139,14 +139,16 @@ class CommandProvider:
         text_file = Path(out_dir) / f"{name}.txt"
         text_file.write_text(text, encoding="utf-8")
         argv = [self._expand(a, text, text_file, out) for a in self.args]
-        kwargs = {}
+        # Texto en UTF-8 pase lo que pase con el codepage: stdin va en bytes UTF-8, los argumentos
+        # viajan como UTF-16 en Windows, y los programas Python hijos hablan UTF-8.
+        kwargs = {"env": {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}}
         if os.name == "nt":
             kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
         try:
             proc = subprocess.run(argv, input=text.encode("utf-8") if self.stdin else None,
                                   capture_output=True, timeout=self.timeout, **kwargs)
-        except FileNotFoundError:
-            raise TTSError(f"No encuentro el programa '{argv[0]}' ([command] args).") from None
+        except (FileNotFoundError, NotADirectoryError) as e:
+            raise TTSError(f"No encuentro el programa '{argv[0]}' ([command] args): {e}") from None
         except subprocess.TimeoutExpired:
             raise TTSError(f"El programa '{Path(argv[0]).name}' tardó más de {self.timeout} s.") from None
         if proc.returncode != 0:

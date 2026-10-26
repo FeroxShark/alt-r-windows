@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -45,7 +46,8 @@ class CliTests(unittest.TestCase):
             cfg = Path(d) / "c.toml"
             cfg.write_text(
                 '[tts]\nprovider = "command"\n[command]\n'
-                f'args = [{sys.executable!r}, {str(gen)!r}, "{{output}}"]\nstdin = false\noutput_ext = "wav"\n'.replace("'", '"'),
+                f'args = [{json.dumps(sys.executable)}, {json.dumps(str(gen))}, "{{output}}"]\n'
+                'stdin = false\noutput_ext = "wav"\n',
                 encoding="utf-8")
             text = " ".join(f"Oración larga número {i} que ocupa bastante espacio en el texto." for i in range(15))
             dest = Path(d) / "salida.wav"

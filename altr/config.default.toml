@@ -111,7 +111,7 @@ timeout = 60
 # Se reemplazan estos textos:
 #   {output}        archivo de audio que tiene que generar el programa
 #   {text}          el texto (cuidado: textos largos pueden no entrar en la línea)
-#   {text_file}     archivo .txt con el texto
+#   {text_file}     archivo .txt con el texto, siempre en UTF-8 (más seguro que {text} con ñ y tildes)
 #   {voice}         la voz de abajo
 #   {speed}         velocidad (1.0 = normal)
 #   {length_scale}  1 / velocidad (lo que usa Piper)

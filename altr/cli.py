@@ -19,22 +19,26 @@ from .text import clean_text, split_chunks
 log = logging.getLogger("altr")
 
 
-def _setup_logging(verbose: bool) -> None:
+def _setup_logging(verbose: bool) -> list[logging.Handler]:
     root = logging.getLogger("altr")
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    handlers: list[logging.Handler] = []
     try:
         app_dir().mkdir(parents=True, exist_ok=True)
         fh = logging.handlers.RotatingFileHandler(app_dir() / "altr.log", maxBytes=500_000,
                                                   backupCount=1, encoding="utf-8")
         fh.setFormatter(fmt)
         root.addHandler(fh)
+        handlers.append(fh)
     except OSError:
         pass
     if sys.stderr is not None and sys.stderr.isatty():
         sh = logging.StreamHandler()
         sh.setFormatter(fmt)
         root.addHandler(sh)
+        handlers.append(sh)
+    return handlers
 
 
 class _Out:
@@ -136,12 +140,16 @@ def main(argv: list[str] | None = None) -> int:
     if sys.stderr is None:  # .exe sin consola: argparse escribiría en el vacío
         sys.stderr = open(os.devnull, "w")
     args = build_parser().parse_args(argv)
-    _setup_logging(args.verbose)
+    handlers = _setup_logging(args.verbose)
     out = _Out()
     try:
         return _run(args, out)
     finally:
         out.finish()
+        # En Windows un archivo abierto no se puede borrar ni mover: soltar altr.log al salir.
+        for h in handlers:
+            logging.getLogger("altr").removeHandler(h)
+            h.close()
 
 
 def _run(args, out: _Out) -> int:

@@ -20,19 +20,19 @@ Es el port a Windows de la función "Alt+R" de un asistente de voz para Linux.
 Abrí **PowerShell** (no hace falta ser administrador) y pegá:
 
 ```powershell
-irm https://github.com/USUARIO/alt-r-windows/releases/latest/download/install.ps1 | iex
+irm https://github.com/FeroxShark/alt-r-windows/releases/latest/download/install.ps1 | iex
 ```
 
 Descarga `AltR.exe`, lo deja en `%LOCALAPPDATA%\AltR`, crea un acceso directo en el menú Inicio y lo arranca.
 Para que además **arranque solo con Windows**:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/USUARIO/alt-r-windows/releases/latest/download/install.ps1))) -Autostart
+& ([scriptblock]::Create((irm https://github.com/FeroxShark/alt-r-windows/releases/latest/download/install.ps1))) -Autostart
 ```
 
 ### Opción B — bajar el `.exe` a mano
 
-1. Entrá a la página de [Releases](https://github.com/USUARIO/alt-r-windows/releases/latest) y bajá `AltR.exe`.
+1. Entrá a la página de [Releases](https://github.com/FeroxShark/alt-r-windows/releases/latest) y bajá `AltR.exe`.
 2. Ponelo en una carpeta que no se borre (por ejemplo `C:\Users\vos\AltR`) y hacé doble clic.
 3. Para que arranque con Windows: clic derecho en el ícono de la bandeja → **Iniciar con Windows**.
 
@@ -45,7 +45,7 @@ Para que además **arranque solo con Windows**:
 Necesitás Python 3.11 o más nuevo (`winget install Python.Python.3.12`).
 
 ```powershell
-git clone https://github.com/USUARIO/alt-r-windows
+git clone https://github.com/FeroxShark/alt-r-windows
 cd alt-r-windows
 .\install.ps1 -Autostart      # crea un entorno propio en %LOCALAPPDATA%\AltR y lo arranca
 ```
@@ -243,7 +243,7 @@ Con la instalación desde código fuente: `py -3 -m altr …`. Sin consola (el `
 Con el instalador:
 
 ```powershell
-& ([scriptblock]::Create((irm https://github.com/USUARIO/alt-r-windows/releases/latest/download/install.ps1))) -Uninstall
+& ([scriptblock]::Create((irm https://github.com/FeroxShark/alt-r-windows/releases/latest/download/install.ps1))) -Uninstall
 ```
 
 (agregá `-Purge` para borrar también tu configuración en `%APPDATA%\AltR`). A mano: ícono → *Iniciar con Windows*

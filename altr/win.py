@@ -405,7 +405,8 @@ def autostart_enabled() -> bool:
 def set_autostart(enabled: bool) -> None:
     import winreg
 
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+    # CreateKeyEx abre la clave Run o la crea si no existe (perfiles nuevos).
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if enabled:
             winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, _launch_command())
         else:
