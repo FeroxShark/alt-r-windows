@@ -56,9 +56,13 @@ read_urls = false
 # Si es false no se muestra nada (la lectura funciona igual).
 enabled = true
 
-# Dónde aparece: "bottom-center", "bottom-left", "bottom-right",
-# "top-center", "top-left" o "top-right".
-position = "bottom-center"
+# Dónde aparece: "top-center" (arriba, centrada, debajo de la barra de tareas si
+# ésta está arriba), "top-left", "top-right", "bottom-center", "bottom-left" o
+# "bottom-right". Además se puede arrastrar: agarrala por la manija que asoma sobre
+# el borde de arriba (o desde el texto) y queda donde la sueltes, recordada por
+# monitor (archivo pos.json junto a este config). Doble clic en la manija vuelve
+# a este lugar.
+position = "top-center"
 
 # En qué monitor: "active" (el que tiene el mouse), "primary" (el principal) o
 # el número de monitor: 1, 2, 3... (como los ordena Windows).

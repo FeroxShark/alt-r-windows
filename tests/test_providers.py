@@ -146,6 +146,21 @@ class EdgeTests(unittest.TestCase):
             out = make_provider(parse_config({"tts": {"speed": 1.2}})).synthesize("Hola, ¿qué tal?", Path(d), "c0")
             self.assertGreater(out.stat().st_size, 2000)
 
+    @unittest.skipUnless(os.environ.get("ALTR_TEST_NETWORK"), "ALTR_TEST_NETWORK=1 para probar con internet")
+    def test_real_word_marks(self):
+        """Edge da una marca por palabra, crecientes y dentro del audio, también con F5 y Ctrl+S."""
+        from altr.audio import audio_duration
+        texto = "Apretá F5 y después Ctrl+S, así que 4 o 5 fotos."
+        with tempfile.TemporaryDirectory() as d:
+            out, marks = make_provider(parse_config({})).synthesize_marked(texto, Path(d), "c0")
+            dur = audio_duration(out)
+        self.assertIsNotNone(marks)
+        self.assertEqual(len(marks), len(texto.split()))
+        starts = [m[0] for m in marks]
+        self.assertEqual(starts, sorted(starts))
+        self.assertLessEqual(marks[-1][1], dur)
+        self.assertLess(marks[0][0], 0.6)
+
 
 if __name__ == "__main__":
     unittest.main()

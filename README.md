@@ -139,7 +139,7 @@ Lo que borres toma el valor por defecto. Si te equivocás, AltR te avisa y sigue
 | Campo | Por defecto | Qué es |
 |---|---|---|
 | `enabled` | `true` | `false` = sin overlay (la lectura funciona igual). |
-| `position` | `"bottom-center"` | `"bottom-center"`, `"bottom-left"`, `"bottom-right"`, `"top-center"`, `"top-left"` o `"top-right"`. |
+| `position` | `"top-center"` | Lugar por defecto: `"top-center"`, `"top-left"`, `"top-right"`, `"bottom-center"`, `"bottom-left"` o `"bottom-right"`. Parte del área de trabajo del monitor (sin la barra de tareas). Cambiarlo borra las posiciones que dejaste arrastrando. |
 | `monitor` | `"active"` | `"active"` (el que tiene el mouse), `"primary"` o un número: `1`, `2`, `3`… |
 | `opacity` | `0.925` | Opacidad del fondo, 0.3–1.0 (más bajo = más transparente). |
 | `font_size` | `16` | Tamaño del texto, 12–28. |
@@ -267,7 +267,7 @@ Con la instalación desde código fuente: `py -3 -m altr …`. Sin consola (el `
 
 ![El overlay mientras lee](docs/overlay.png)
 
-Mientras AltR lee aparece una cápsula de vidrio abajo al centro de la pantalla (es el mismo overlay que la versión
+Mientras AltR lee aparece una cápsula de vidrio arriba, centrada en la pantalla y debajo de la barra de tareas si ésta está arriba (es el mismo overlay que la versión
 de Linux, con la misma estética): el texto en tres líneas con la **palabra que suena marcada en verde** y lo ya leído
 apagado, una **onda** que avanza con el audio, el tiempo (`0:08 / 0:14`), el botón de **pausa / seguir** a la izquierda
 y la **X** para cortar a la derecha. Mientras se genera la voz muestra «Preparando»; si algo falla, «No pude leer» con
@@ -275,10 +275,29 @@ el motivo.
 
 - **Hacé clic en la onda** (o arrastrala) para saltar a otro punto, o **clic en una palabra** del texto para seguir desde
   ahí. Sólo se puede saltar a lo que ya se generó.
+- **Se arrastra.** Agarrala por la **manija** que asoma sobre el borde de arriba, o desde el texto (hay que mover el
+  mouse unos 6 px: un clic simple en una palabra sigue siendo un clic). Queda donde la sueltes, **recordada por
+  monitor** (`pos.json` junto al `config.toml`), y siempre dentro del área libre de la barra de tareas. **Doble clic en
+  la manija** vuelve al lugar de `position`.
 - **No te roba el foco ni los clics:** la ventana no se activa, no sale en Alt+Tab ni en la barra de tareas, y todo lo
   que está fuera de la cápsula deja pasar el mouse. Seguís escribiendo donde estabas.
 - Se elige dónde y cómo se ve en la sección `[overlay]` del config (abajo); `enabled = false` lo apaga.
 - Para verlo sin hablar con Edge: `AltR.exe --demo-overlay` (lo abre con una lectura de prueba, lo prueba y se cierra).
+
+### Novedades de 0.4.0: la palabra marcada es la que suena
+
+Antes el resaltado repartía las palabras por cantidad de letras dentro de cada frase y se podía adelantar o atrasar
+hasta más de 1 s. Ahora cada frase trae una marca por palabra y la que se resalta es la que se está oyendo, también
+después de pausar o saltar. Qué tan fina es depende del motor (error medido contra el audio):
+
+| Motor | De dónde salen las marcas | Precisión |
+|---|---|---|
+| **`edge` (recomendado, es el de fábrica)** | El propio servicio de Edge dice cuándo pronuncia cada palabra | **Real: 44 ms o menos** |
+| `command` con salida `wav` (Piper) | Se estiman de la energía del audio | Mediana ~0,1 s; el 63 % de las palabras a 150 ms o menos |
+| `openai` / `command` con `mp3` | Se estiman del mp3 sin decodificarlo | Mediana ~0,17 s; el 44 % a 150 ms o menos |
+
+Con los motores sin marcas el resaltado puede ir hasta ~0,5 s corrido en frases con rutas o siglas raras. Si te importa
+la sincronía fina, usá Edge.
 
 ---
 
@@ -305,7 +324,7 @@ el motivo.
   `ctrl` (el de fábrica, `"ctrl+alt+r"`, ya lo es).
 - **No veo la cápsula.** Mirá que `[overlay] enabled` sea `true` y el `monitor` exista. Si el registro dice «el overlay no
   cargó», avisá con ese texto. `AltR.exe --demo-overlay` la abre con una lectura de prueba.
-- **La cápsula tapa algo.** Cambiá `position` (por ejemplo `"top-right"`) o bajale la `opacity`; los clics fuera de
+- **La cápsula tapa algo.** Arrastrala por la manija, cambiá `position` (por ejemplo `"top-right"`) o bajale la `opacity`; los clics fuera de
   la cápsula pasan de largo.
 - **No cambia la velocidad desde la cápsula.** A diferencia de Linux, acá la velocidad es la de `[tts] speed`.
 - **El portapapeles quedó con otra cosa.** Sólo se restaura texto. Poné `restore_clipboard = false` si preferís que

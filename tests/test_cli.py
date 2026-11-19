@@ -26,7 +26,7 @@ class CliTests(unittest.TestCase):
             rc, out = run(["--check"], d)
             self.assertEqual(rc, 0)
             self.assertIn("ctrl+alt+r", out)
-            self.assertIn("overlay: bottom-center", out)
+            self.assertIn("overlay: top-center", out)
             self.assertTrue((Path(d) / "config.toml").exists())
 
     def test_check_bad_config(self):

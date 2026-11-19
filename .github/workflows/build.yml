@@ -70,6 +70,14 @@ jobs:
         env:
           ALTR_TEST_NETWORK: "1"
         run: python -m unittest discover -s tests -t . -v
+      - name: Sincronía del resaltado (tests.test_sync, reloj real, reproductor simulado)
+        timeout-minutes: 8
+        run: python -m unittest tests.test_sync -v
+      - name: MCI real sobre un wav corto (abrir, play, position, pause, seek, close)
+        timeout-minutes: 3
+        # Sin placa de audio MCI-NO-DISPONIBLE no falla: la sincronía ya se probó con SimBackend arriba.
+        # Si MCI abre y da posiciones incoherentes, el paso falla (exit 1).
+        run: python scripts/probe_mci.py
       - name: Test con ventana real (Bloc de notas + Ctrl+C simulado)
         timeout-minutes: 3
         continue-on-error: true   # informativo: depende de que el runner tenga escritorio

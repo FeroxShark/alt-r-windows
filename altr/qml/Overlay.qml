@@ -4,6 +4,13 @@
 // (verde #3ddc84 -> #7dffb0), todo lo que se toca mide 32 px, y el karaoke (3 líneas: anterior,
 // actual y siguiente, con la palabra actual en una píldora que se desliza).
 //
+// Posición (port de lo que Linux ganó el 2026-11-16): por defecto arriba, centrada, bajo la barra de
+// tareas (Python parte del área de trabajo del monitor); se arrastra por la manija que asoma sobre
+// el borde de arriba o desde el cuerpo (umbral de 6 px, para no romper el clic en las palabras); la
+// posición queda por monitor (pos.json, lo maneja altr/ui.py + altr/placement.py) y doble clic en la
+// manija vuelve al lugar por defecto. QML sólo avisa (bridge.dragStart/dragMove/dragEnd/resetPos):
+// la ventana la mueve Python con el cursor global, porque las coordenadas locales se mueven con ella.
+//
 // Diferencias con Linux: no hay chip de velocidad (la reproducción de Windows no cambia la
 // velocidad; se elige en [tts] speed) ni teclado (la ventana nunca toma el foco).
 //
@@ -21,6 +28,7 @@ Item {
     property string sid: ""           // identidad de la lectura (cambia con cada lectura nueva)
     property var texts: []            // texto mostrado, por trozo
     property var durs: []             // por trozo: -1 sin generar, 0 sin audio, si no segundos
+    property var marks: []            // por trozo: [[inicio, fin], ...] en segundos por palabra, o null (sin marcas)
     property real pos: 0              // tiempo global en la lectura
     property bool complete: false     // ya se generaron todos los trozos
     property var peaks: []            // 18 valores 0..1
@@ -29,11 +37,15 @@ Item {
     property int cardW: 704
     property int kfont: 16
     property real bgAlpha: 0.925
-    property bool atTop: false
+    property bool atTop: false        // la cápsula cuelga del borde de arriba de la ventana (arriba o con posición guardada)
+    property bool tipBelow: false     // la etiqueta del seek va debajo (arriba caería fuera del área de trabajo)
+    property bool dragging: false
 
     // ---- geometría y paleta (igual que Linux) ----
     readonly property int hueco: 16          // aire entre el borde de la pantalla y la cápsula
     readonly property int btn: 32            // todo lo que se toca mide 32
+    readonly property int handleH: 14        // manija que asoma sobre el borde de arriba de la cápsula
+    readonly property int dragThreshold: 6   // px antes de que el cuerpo empiece a arrastrar (si no, es un clic)
     readonly property int nbars: 18          // valores de la onda que manda Python
     readonly property int wbars: 56          // barras que se dibujan (interpoladas)
     readonly property int barGap: 2
@@ -62,6 +74,8 @@ Item {
     readonly property int lineH: Math.ceil(natH * 1.3)
     // alto FINAL de la cápsula según el estado (la animación va aparte, en `height`)
     readonly property int pillTargetH: hasText ? 80 + 3 * lineH : 44
+    readonly property int pillMaxH: 80 + 3 * lineH
+    readonly property real pillY: pill.y      // para que Python reubique la ventana sin saltos
 
     // la ventana mide lo máximo que puede ocupar: cápsula grande + hueco + etiqueta del seek
     width: cardW
@@ -114,7 +128,9 @@ Item {
     property var lecWe: []            // fin
     property var lecCw0: []           // índice de la primera palabra de cada trozo
     property var lecDurs: []          // duración por trozo (null = sin generar)
+    property var lecMarcas: []        // por trozo: marcas por palabra (una por palabra del trozo) o null
     readonly property int lecWords: lecWs.length
+    readonly property int curWord: karaoke.cw   // palabra resaltada (para las pruebas de sincronía)
 
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
     function fmt(s) {
@@ -123,8 +139,19 @@ Item {
         return m + ":" + (r < 10 ? "0" + r : r)
     }
     function clearLectura() {
-        lecFlat = ""; lecWs = []; lecWe = []; lecCw0 = []
+        lecFlat = ""; lecWs = []; lecWe = []; lecCw0 = []; lecMarcas = []
     }
+    // sólo valen las marcas con una por palabra del trozo; si no, ese trozo se reparte por caracteres
+    function buildMarcas() {
+        const out = []
+        for (let k = 0; k < lecCw0.length; k++) {
+            const w1 = (k + 1 < lecCw0.length) ? lecCw0[k + 1] : lecWs.length
+            const m = (marks && k < marks.length) ? marks[k] : null
+            out.push(m && m.length === w1 - lecCw0[k] && m.length > 0 ? m : null)
+        }
+        lecMarcas = out
+    }
+    onMarksChanged: buildMarcas()
     function buildLectura() {
         let flat = "", ws = [], we = [], cw0 = []
         for (let k = 0; k < texts.length; k++) {
@@ -138,6 +165,7 @@ Item {
             }
         }
         lecFlat = flat; lecWs = ws; lecWe = we; lecCw0 = cw0
+        buildMarcas()
     }
     onTextsChanged: buildLectura()
     onDursChanged: lecDurs = durs.map(d => (d === undefined || d === null || d < 0) ? null : d)
@@ -152,25 +180,38 @@ Item {
     readonly property int curBar: Math.min(wbars - 1, Math.floor(frac * wbars))
 
     // palabra que suena en el instante t: trozo por suma acumulada de duraciones, y dentro del
-    // trozo proporcional a los caracteres. Un trozo con duración 0 (sin audio) ocupa 0 s: se
-    // salta sin frenar la cuenta. Pasado lo generado (null) queda en la última palabra del
-    // último trozo con audio.
+    // trozo la última cuya marca ya empezó (sin marcas, proporcional a los caracteres). Una palabra
+    // sigue marcada durante la pausa que la sigue. Un trozo con duración 0 (sin audio) ocupa 0 s: se
+    // salta sin frenar la cuenta. Pasado lo generado (null) queda en la última palabra del último
+    // trozo con audio.
     function wordAt(t) {
         const n = lecDurs.length, nw = lecWs.length
         if (n === 0 || nw === 0) return -1
-        let start = 0, k = -1
+        let acc = 0, start = 0, k = -1
         for (let i = 0; i < n; i++) {
             const d = lecDurs[i]
             if (d === null) break
             if (d <= 0) continue
-            k = i
-            if (t < start + d) break
-            start += d
+            k = i; start = acc          // inicio del trozo elegido: pasado el final sigue siendo el suyo
+            if (t < acc + d) break
+            acc += d
         }
         if (k < 0) return 0
         const w0 = lecCw0[k], w1 = (k + 1 < n) ? lecCw0[k + 1] : nw
         const d = lecDurs[k]
         if (w1 <= w0) return Math.min(w0, nw - 1)
+        const m = lecMarcas[k]
+        if (m) {
+            const local = t - start
+            // el silencio con que arranca el trozo todavía es de la palabra anterior
+            if (local < m[0][0] && w0 > 0) return w0 - 1
+            let lo = 0, hi = m.length - 1
+            while (lo < hi) {           // última palabra con inicio <= local
+                const mid = (lo + hi + 1) >> 1
+                if (m[mid][0] <= local) lo = mid; else hi = mid - 1
+            }
+            return w0 + lo
+        }
         const f = clamp((t - start) / d, 0, 1)
         let total = 0
         for (let i = w0; i < w1; i++) total += lecWe[i] - lecWs[i] + 1
@@ -196,6 +237,8 @@ Item {
         }
         const d = lecDurs[k]
         if (d === null || d <= 0) return -1
+        const m = lecMarcas[k]
+        if (m) return start + m[i - lecCw0[k]][0]
         const w1 = (k + 1 < n) ? lecCw0[k + 1] : nw
         let total = 0, before = 0
         for (let j = lecCw0[k]; j < w1; j++) {
@@ -259,7 +302,7 @@ Item {
     onSidChanged: {
         exitTimer.stop(); exitHold = false
         resetVals(); clearLectura()
-        texts = []; durs = []   // así Python puede mandar los nuevos aunque sean iguales
+        texts = []; durs = []; marks = []   // así Python puede mandar los nuevos aunque sean iguales
         if (playing) revealAnim.restart()
     }
 
@@ -293,11 +336,18 @@ Item {
     onPreparingChanged: if (!preparing) prepSecs = 0
 
     // ---- máscara: sólo la cápsula captura clics, el resto de la ventana es transparente a ellos ----
+    // (la manija que asoma arriba también captura: sin ella no se podría agarrar)
     function updateMask() {
-        if (showing || exitHold) bridge.setMask(Math.round(pill.x), Math.round(pill.y),
-                                                Math.round(pill.width), Math.round(pill.height))
-        else bridge.setMask(0, 0, 0, 0)
+        if (showing || exitHold) {
+            const top = Math.max(0, Math.round(pill.y) - handleH)
+            bridge.setMask(Math.round(pill.x), top, Math.round(pill.width),
+                           Math.round(pill.y) + Math.round(pill.height) - top)
+        } else bridge.setMask(0, 0, 0, 0)
     }
+    // ---- arrastre: Python mueve la ventana con el cursor global ----
+    function dragBegin() { bridge.dragStart(); dragging = true }
+    function dragStep() { if (dragging) bridge.dragMove() }
+    function dragFinish() { if (dragging) { dragging = false; bridge.dragEnd() } }
     onExitHoldChanged: updateMask()
 
     // ---- piezas reutilizables ----
@@ -403,6 +453,61 @@ Item {
             anchors.left: parent.left; anchors.right: parent.right
             anchors.leftMargin: parent.radius * 0.8; anchors.rightMargin: parent.radius * 0.8
             color: "#2effffff"
+        }
+
+        HoverHandler { id: hov }
+
+        // cuerpo de la cápsula: arrastrar desde cualquier parte que no sea un control. Debajo de todo lo
+        // demás (los botones, la onda y el karaoke capturan lo suyo); el umbral deja pasar el clic simple.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.ArrowCursor
+            property real px0: 0
+            property real py0: 0
+            onPressed: e => { px0 = e.x; py0 = e.y }
+            onPositionChanged: e => {
+                if (!pressed) return
+                if (root.dragging) root.dragStep()
+                else if (Math.sqrt((e.x - px0) * (e.x - px0) + (e.y - py0) * (e.y - py0)) > root.dragThreshold) root.dragBegin()
+            }
+            onReleased: root.dragFinish()
+            onCanceled: root.dragFinish()
+        }
+
+        // ---- manija: asoma sobre el borde de arriba. Arrastrar la mueve; doble clic vuelve al lugar por defecto ----
+        Rectangle {
+            id: manija
+            x: (pill.width - width) / 2
+            y: -root.handleH + 2
+            width: 46; height: root.handleH
+            radius: height / 2
+            visible: !root.seeking
+            color: manijaMA.containsMouse || root.dragging ? root.tileHover : root.tile
+            border.width: 1; border.color: "#4dd5eadc"
+            opacity: (hov.hovered || manijaMA.containsMouse || root.dragging) ? 1 : 0.5   // medio apagada en reposo
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: 100 } }
+            Row {
+                anchors.centerIn: parent
+                spacing: 4
+                Repeater {
+                    model: 3
+                    Rectangle { width: 3; height: 3; radius: 1.5; color: root.txt; opacity: 0.8 }
+                }
+            }
+            MouseArea {
+                id: manijaMA
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton
+                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                onPressed: root.dragBegin()
+                onPositionChanged: if (pressed) root.dragStep()
+                onReleased: root.dragFinish()
+                onCanceled: root.dragFinish()
+                onDoubleClicked: { root.dragging = false; bridge.resetPos() }
+            }
         }
 
         // ================== ARMANDO / ERROR ==================
@@ -627,8 +732,24 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton
-                cursorShape: karaoke.hoverW >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+                cursorShape: root.dragging ? Qt.ClosedHandCursor : (karaoke.hoverW >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor)
+                // el texto también se agarra para arrastrar la cápsula: pasado el umbral es un arrastre
+                // y ya no es un clic en la palabra
+                property real px0: 0
+                property real py0: 0
+                property bool moved: false
+                onPressed: e => { px0 = e.x; py0 = e.y; moved = false }
+                onPositionChanged: e => {
+                    if (!pressed) return
+                    if (root.dragging) { moved = true; root.dragStep() }
+                    else if (Math.sqrt((e.x - px0) * (e.x - px0) + (e.y - py0) * (e.y - py0)) > root.dragThreshold) {
+                        moved = true; root.dragBegin()
+                    }
+                }
+                onReleased: root.dragFinish()
+                onCanceled: root.dragFinish()
                 onClicked: e => {
+                    if (moved) return
                     const w = karaoke.wordAtPoint(e.x, e.y - flow.y)
                     if (w >= 0) root.seekWord(w)
                 }
@@ -750,10 +871,10 @@ Item {
             }
         }
 
-        // etiqueta con el destino mientras arrastrás (del lado de adentro de la pantalla)
+        // etiqueta con el destino mientras arrastrás la onda (debajo si arriba caería fuera del área de trabajo)
         Rectangle {
             visible: root.seeking && root.playing
-            y: root.atTop ? pill.height + 8 : -height - 8
+            y: root.tipBelow ? pill.height + 8 : -height - 8
             x: root.clamp(wave.mapToItem(pill, seekMA.mouseX, 0).x - width / 2, 0, pill.width - width)
             width: tipTxt.implicitWidth + 16
             height: 24; radius: 12

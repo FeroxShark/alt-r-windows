@@ -48,7 +48,7 @@ class ConfigTests(unittest.TestCase):
     def test_overlay_defaults_and_overrides(self):
         o = parse_config({}).overlay
         self.assertEqual((o.enabled, o.position, o.monitor, o.opacity, o.font_size),
-                         (True, "bottom-center", "active", 0.925, 16))
+                         (True, "top-center", "active", 0.925, 16))
         o = parse_config({"overlay": {"position": "Top-Right", "monitor": "2", "opacity": 1}}).overlay
         self.assertEqual((o.position, o.monitor, o.opacity), ("top-right", "2", 1.0))
 

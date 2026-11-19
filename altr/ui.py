@@ -24,12 +24,13 @@ from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter, QP
 from PySide6.QtQuick import QQuickView, QQuickWindow, QSGRendererInterface
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import __version__, updates
+from . import __version__, placement, updates
+from .config import app_dir
 
 log = logging.getLogger("altr")
 
 QML_DIR = Path(__file__).resolve().parent / "qml"
-HUECO = 16          # aire entre el borde de la pantalla y la cápsula (igual que Linux)
+HUECO = placement.HUECO   # aire entre el borde del área de trabajo y la cápsula (igual que Linux)
 ERROR_SECS = 8.0    # cuánto se queda el error en pantalla si nadie lo cierra
 
 
@@ -89,6 +90,22 @@ class _Bridge(QObject):
     def seek(self, t: float) -> None:
         self._ctl.reader.seek(t)
 
+    @Slot()
+    def dragStart(self) -> None:
+        self._ctl.drag_start()
+
+    @Slot()
+    def dragMove(self) -> None:
+        self._ctl.drag_move()
+
+    @Slot()
+    def dragEnd(self) -> None:
+        self._ctl.drag_end()
+
+    @Slot()
+    def resetPos(self) -> None:
+        self._ctl.reset_pos()
+
     @Slot(int, int, int, int)
     def setMask(self, x: int, y: int, w: int, h: int) -> None:
         self._ctl.set_mask(x, y, w, h)
@@ -97,9 +114,13 @@ class _Bridge(QObject):
 class OverlayController:
     """La ventana del overlay y su puente con el lector."""
 
-    def __init__(self, reader, overlay_cfg):
+    def __init__(self, reader, overlay_cfg, pos_path: Path | None = None):
         self.reader = reader
         self.cfg = overlay_cfg
+        # posición guardada por monitor (arrastre); doble clic en la manija la borra
+        self.pins = placement.PosStore(pos_path or (app_dir() / "pos.json"))
+        self._drag: placement.Drag | None = None
+        self._cursor = lambda: (QCursor.pos().x(), QCursor.pos().y())   # inyectable en pruebas
         self.view: QQuickView | None = None
         self.root = None
         self.error = ""             # por qué no se pudo crear (QML roto, etc.)
@@ -141,6 +162,10 @@ class OverlayController:
 
     # ------------------------------------------------------------------ config
     def apply_config(self, overlay_cfg) -> None:
+        # cambiar `position` en la configuración manda sobre lo que se arrastró antes
+        if getattr(self, "_position", overlay_cfg.position) != overlay_cfg.position:
+            self.pins.clear_all()
+        self._position = overlay_cfg.position
         self.cfg = overlay_cfg
         if not overlay_cfg.enabled:
             self.timer.stop()
@@ -152,7 +177,6 @@ class OverlayController:
             return
         self.root.setProperty("kfont", int(overlay_cfg.font_size))
         self.root.setProperty("bgAlpha", float(overlay_cfg.opacity))
-        self.root.setProperty("atTop", overlay_cfg.position.startswith("top"))
         if self.view.isVisible():
             self._place()
         self.timer.start()
@@ -167,22 +191,79 @@ class OverlayController:
             return screens[int(mon) - 1]
         return QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
 
+    @staticmethod
+    def _rect(r) -> placement.Rect:
+        return placement.Rect(r.x(), r.y(), r.width(), r.height())
+
+    def _work(self, scr=None) -> placement.Rect:
+        """Área de trabajo del monitor: la pantalla sin la barra de tareas (SPI_GETWORKAREA; Qt la
+        entrega como availableGeometry, ya por monitor)."""
+        return self._rect((scr or self.view.screen()).availableGeometry())
+
+    def _win_h_clamp(self, h: int) -> int:
+        """Alto que cuenta para meter la ventana en el área de trabajo al arrastrar: la cápsula más
+        grande + el aire de arriba y de abajo (no el alto de la ventana entero, que trae de sobra el
+        lugar de la etiqueta del seek)."""
+        return min(h, int(self.root.property("pillMaxH")) + 2 * HUECO)
+
     def _place(self) -> None:
         scr = self._screen()
-        full, geo = scr.geometry(), scr.availableGeometry()
-        self.root.setProperty("cardW", max(360, min(704, round(full.width() * 0.6))))
+        full, work = self._rect(scr.geometry()), self._work(scr)
+        self.root.setProperty("cardW", max(360, min(704, round(full.w * 0.6))))
         w, h = int(self.root.property("width")), int(self.root.property("height"))
         self.view.setScreen(scr)
         self.view.resize(w, h)
-        pos = self.cfg.position
-        if pos.endswith("left"):
-            x = geo.left() + HUECO
-        elif pos.endswith("right"):
-            x = geo.right() + 1 - w - HUECO
+        pin = self.pins.get(scr.name())
+        if pin:
+            x, y = placement.window_from_pin(pin, w, self._win_h_clamp(h), full, work)
         else:
-            x = geo.left() + (geo.width() - w) // 2
-        y = geo.top() if pos.startswith("top") else geo.bottom() + 1 - h
+            x, y = placement.anchor_xy(self.cfg.position, work, w, h)
         self.view.setPosition(x, y)
+        self._layout(at_top=bool(pin) or self.cfg.position.startswith("top"), y=y, work=work)
+
+    def _layout(self, at_top: bool, y: int, work: placement.Rect) -> None:
+        """La cápsula cuelga de arriba de la ventana (arriba o con posición guardada: crece hacia abajo)
+        o se apoya abajo; la etiqueta del seek va debajo si arriba caería fuera del área de trabajo."""
+        self.root.setProperty("atTop", at_top)
+        self.root.setProperty("tipBelow", at_top and y + HUECO - 34 < work.y)
+
+    # ---------------------------------------------------------------- arrastre
+    def drag_start(self) -> None:
+        if self.view is None or not self.view.isVisible():
+            return
+        self._drag = placement.Drag(self._cursor(), (self.view.x(), self.view.y()))
+        if not self.root.property("atTop"):
+            # abajo: la cápsula pasa a colgar de arriba SIN moverse de donde está en pantalla
+            y = self.view.y() + round(float(self.root.property("pillY"))) - HUECO
+            self.root.setProperty("atTop", True)
+            self.view.setPosition(self.view.x(), y)
+            self._drag = placement.Drag(self._cursor(), (self.view.x(), y))
+
+    def drag_move(self) -> None:
+        d = self._drag
+        if d is None:
+            return
+        work = self._work()
+        w, h = self.view.width(), self.view.height()
+        x, y = d.move(self._cursor(), w, self._win_h_clamp(h), work)
+        self.view.setPosition(x, y)
+        self._layout(True, y, work)
+
+    def drag_end(self) -> None:
+        d, self._drag = self._drag, None
+        if d is None or not d.moved:
+            return
+        scr = self.view.screen()
+        pin = placement.pin_from_window(self.view.x(), self.view.y(), self.view.width(),
+                                        self._rect(scr.geometry()))
+        self.pins.set(scr.name(), pin)
+
+    def reset_pos(self) -> None:
+        """Doble clic en la manija: se olvida la posición de este monitor y vuelve el lugar por defecto."""
+        self._drag = None
+        if self.view is not None:
+            self.pins.clear(self.view.screen().name())
+            self._place()
 
     def _show(self) -> None:
         self._place()
@@ -233,6 +314,7 @@ class OverlayController:
             self._push("phase", phase)
             self._push("texts", snap["texts"])
             self._push("durs", [-1 if d is None else d for d in snap["durs"]])
+            self._push("marks", snap["marks"])
             self._push("complete", snap["complete"])
             self._push("peaks", snap["peaks"])
             self._push("errText", snap["error"])
@@ -247,8 +329,8 @@ class OverlayController:
     def state(self) -> dict:
         """Lo que QML tiene ahora (para la demo y los tests)."""
         r = self.root
-        names = ("phase", "uiActive", "lecWords", "globalPos", "totalDur", "complete", "paused",
-                 "appear", "curBar", "width", "height")
+        names = ("phase", "uiActive", "lecWords", "curWord", "visPos", "globalPos", "totalDur", "complete", "paused",
+                 "appear", "curBar", "width", "height", "atTop", "tipBelow", "dragging")
         return {n: r.property(n) for n in names} if r is not None else {}
 
     def grab(self):

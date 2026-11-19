@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from . import marks as marcas_mod
 from .audio import audio_duration, bin_peaks, envelope
 from .config import Config
 from .player import PlayControl
@@ -44,6 +45,8 @@ class _Session:
         self.paths: list[Path | None] = [None] * n
         self.durs: list[float | None] = [None] * n
         self.envs: list[list[float] | None] = [None] * n
+        self.marks: list[list[list[float]] | None] = [None] * n   # por trozo: [[ini, fin], ...] por palabra
+        self.marks_src: list[str | None] = [None] * n             # "modelo" | "audio" | "texto"
         self.peaks: list[float] = []
         self.cur = 0                # trozo que suena, o el próximo si estamos entre trozos
         self.started = False        # ya sonó audio
@@ -135,9 +138,10 @@ class Reader:
                 if session.cancel.is_set():
                     return
                 try:
-                    path = provider.synthesize(chunk, tmp, f"c{i:04d}")
+                    path, given = self._synthesize(provider, chunk, tmp, f"c{i:04d}")
                     dur = audio_duration(path)
                     env = envelope(path, chunk, dur)
+                    mk, src = self._marks_for(path, chunk, dur, given)
                 except TTSError as e:
                     if session.cancel.is_set():
                         return
@@ -152,11 +156,34 @@ class Reader:
                     return
                 with session.cond:
                     session.paths[i], session.durs[i], session.envs[i] = path, dur, env
+                    session.marks[i], session.marks_src[i] = mk, src
                     session.peaks = bin_peaks(session.envs)
                     session.cond.notify_all()
         finally:
             with session.cond:
                 session.cond.notify_all()
+
+    @staticmethod
+    def _synthesize(provider, chunk: str, tmp: Path, name: str):
+        """(ruta, marcas del motor o None). Los motores que saben cuándo dicen cada palabra
+        (`synthesize_marked`, hoy Edge) las dan junto con el audio."""
+        marked = getattr(provider, "synthesize_marked", None)
+        if marked is None:
+            return provider.synthesize(chunk, tmp, name), None
+        return marked(chunk, tmp, name)
+
+    @staticmethod
+    def _marks_for(path: Path, chunk: str, dur: float, given):
+        """Marcas por palabra del trozo: las del motor si sirven; si no, las estimadas del audio (wav)
+        o del texto (mp3). (None, None) si nada sirve: el overlay reparte por caracteres."""
+        try:
+            ok = marcas_mod.sana(given, len(chunk.split()), dur) if given else None
+            if ok:
+                return ok, "modelo"
+            return marcas_mod.de_archivo(path, chunk, dur)
+        except Exception:  # una marca mala nunca debe frenar la lectura
+            log.exception("marcas por palabra fallaron")
+            return None, None
 
     def _next_ready(self, session: _Session, i: int, start: float):
         """Espera el trozo `i` (o un salto pedido). Devuelve (i, start) o None si no hay más."""
@@ -280,5 +307,6 @@ class Reader:
             else:
                 phase = "stalled"
             return {"id": s.id, "phase": phase, "texts": list(s.shown), "durs": durs, "pos": pos,
+                    "marks": [list(m) if m else None for m in s.marks], "marks_src": list(s.marks_src),
                     "complete": all(p is not None for p in s.paths), "peaks": list(s.peaks),
                     "error": s.error or ""}

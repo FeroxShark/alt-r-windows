@@ -32,6 +32,10 @@ class EdgeProvider:
         return f"{pct:+d}%"
 
     def synthesize(self, text: str, out_dir: Path, name: str) -> Path:
+        return self.synthesize_marked(text, out_dir, name)[0]
+
+    def synthesize_marked(self, text: str, out_dir: Path, name: str):
+        """(ruta del mp3, marcas por palabra o None): Edge dice cuándo pronuncia cada palabra (WordBoundary)."""
         import asyncio
 
         try:
@@ -39,11 +43,20 @@ class EdgeProvider:
         except ImportError:
             raise TTSError("Falta el paquete edge-tts (pip install edge-tts).") from None
         out = Path(out_dir) / f"{name}.mp3"
+        limites: list[tuple[float, float, str]] = []
 
         async def run():
-            comm = edge_tts.Communicate(text, self.voice, rate=self.rate_string(self.speed),
-                                        pitch=self.pitch, proxy=self.proxy)
-            await comm.save(str(out))
+            kw = dict(rate=self.rate_string(self.speed), pitch=self.pitch, proxy=self.proxy)
+            try:
+                comm = edge_tts.Communicate(text, self.voice, boundary="WordBoundary", **kw)
+            except TypeError:  # edge-tts viejo: ya emitía WordBoundary por defecto
+                comm = edge_tts.Communicate(text, self.voice, **kw)
+            with open(out, "wb") as f:
+                async for m in comm.stream():
+                    if m["type"] == "audio":
+                        f.write(m["data"])
+                    elif m["type"] == "WordBoundary":
+                        limites.append((m["offset"] / 1e7, m["duration"] / 1e7, m["text"]))
 
         try:
             asyncio.run(run())
@@ -51,7 +64,12 @@ class EdgeProvider:
             raise TTSError(_edge_message(e, self.voice)) from e
         if not out.exists() or out.stat().st_size == 0:
             raise TTSError(f"Edge no devolvió audio (¿la voz '{self.voice}' existe?).")
-        return out
+        try:
+            from . import marks
+            from .audio import audio_duration
+            return out, marks.de_limites(limites, text, audio_duration(out))
+        except Exception:
+            return out, None
 
 
 def _edge_message(e: Exception, voice: str) -> str:

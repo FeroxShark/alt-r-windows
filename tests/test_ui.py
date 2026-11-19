@@ -40,7 +40,9 @@ class OverlayTests(unittest.TestCase):
     def make(self, overlay=None, provider=None, backend=None):
         cfg = parse_config({"overlay": overlay or {}})
         reader = Reader(cfg, backend or SimBackend(), provider=provider or DemoProvider(40))
-        ov = ui.OverlayController(reader, cfg.overlay)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ov = ui.OverlayController(reader, cfg.overlay, pos_path=Path(tmp.name) / "pos.json")
         self.addCleanup(self._close, reader, ov)
         return reader, ov
 
@@ -76,12 +78,13 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(ov.view.color().alpha(), 0)
 
     def test_placement_follows_config(self):
-        for pos, atTop in (("bottom-center", False), ("top-right", True), ("bottom-left", False)):
+        for pos, atTop in (("bottom-center", False), ("top-right", True), ("bottom-left", False),
+                           ("top-center", True)):
             reader, ov = self.make({"position": pos})
-            self.assertEqual(ov.root.property("atTop"), atTop)
             reader.speak(DEMO_TEXT)
             self.assertTrue(self.pump(lambda: ov.view.isVisible()))
-            geo = ov._screen().availableGeometry()
+            self.assertEqual(ov.root.property("atTop"), atTop)
+            geo = ov._screen().availableGeometry()   # área de trabajo: sin la barra de tareas
             v = ov.view
             if atTop:
                 self.assertEqual(v.y(), geo.top())
@@ -94,6 +97,141 @@ class OverlayTests(unittest.TestCase):
             else:
                 self.assertAlmostEqual(v.x() + v.width() / 2, geo.center().x(), delta=2)
             reader.stop()
+
+    def test_default_is_top_center_with_tip_below(self):
+        reader, ov = self.make()
+        self.assertEqual(ov.cfg.position, "top-center")
+        reader.speak(DEMO_TEXT)
+        self.assertTrue(self.pump(lambda: ov.view.isVisible()))
+        self.assertTrue(ov.root.property("atTop"))
+        self.assertTrue(ov.root.property("tipBelow"))   # arriba no entra la etiqueta del seek
+
+    def _visible(self, **kw):
+        reader, ov = self.make(**kw)
+        cur = [0, 0]
+        ov._cursor = lambda: tuple(cur)
+        reader.speak(DEMO_TEXT)
+        self.assertTrue(self.pump(lambda: ov.state().get("phase") == "playing" and ov.state()["appear"] > 0.99))
+        return reader, ov, cur
+
+    def test_drag_moves_window_and_remembers_it_per_monitor(self):
+        reader, ov, cur = self._visible()
+        x0, y0 = ov.view.x(), ov.view.y()
+        cur[:] = [x0 + 300, y0 + 20]
+        ov.bridge.dragStart()
+        cur[:] = [x0 + 300 - 40, y0 + 20 + 100]
+        ov.bridge.dragMove()
+        self.assertEqual((ov.view.x(), ov.view.y()), (x0 - 40, y0 + 100))
+        ov.bridge.dragEnd()
+        name = ov.view.screen().name()
+        pin = ov.pins.get(name)
+        self.assertIsNotNone(pin)
+        # sobrevive: otro controlador con el mismo archivo coloca la ventana ahí
+        reader2, ov2 = self.make()
+        ov2.pins = ui.placement.PosStore(ov.pins.path)
+        ov2.view.show()
+        ov2._place()
+        self.assertEqual((ov2.view.x(), ov2.view.y()), (x0 - 40, y0 + 100))
+        ov2.view.hide()
+
+    def test_drag_stays_inside_work_area_and_snaps_to_center(self):
+        reader, ov, cur = self._visible()
+        geo = ov._screen().availableGeometry()
+        x0, y0 = ov.view.x(), ov.view.y()
+        cur[:] = [x0 + 100, y0 + 20]
+        ov.bridge.dragStart()
+        cur[:] = [-9000, 9000]
+        ov.bridge.dragMove()
+        self.assertEqual(ov.view.x(), geo.left())
+        maxh = int(ov.root.property("pillMaxH")) + 2 * ui.HUECO
+        self.assertEqual(ov.view.y(), geo.bottom() + 1 - maxh)
+        cur[:] = [x0 + 100 + 5, y0 + 20 + 7]       # casi donde estaba: se engancha al centro
+        ov.bridge.dragMove()
+        self.assertEqual(ov.view.x() + ov.view.width() / 2, geo.left() + geo.width() / 2)
+        ov.bridge.dragEnd()
+
+    def test_click_without_moving_does_not_save_and_double_click_resets(self):
+        reader, ov, cur = self._visible()
+        x0, y0 = ov.view.x(), ov.view.y()
+        cur[:] = [x0 + 100, y0 + 20]
+        ov.bridge.dragStart()
+        ov.bridge.dragEnd()                       # un clic en la manija, sin mover
+        self.assertEqual(ov.pins.data, {})
+        ov.bridge.dragStart()
+        cur[:] = [x0 + 40, y0 + 120]
+        ov.bridge.dragMove()
+        ov.bridge.dragEnd()
+        self.assertTrue(ov.pins.data)
+        ov.bridge.resetPos()
+        self.assertEqual(ov.pins.data, {})
+        self.assertEqual((ov.view.x(), ov.view.y()), (x0, y0))
+
+    def test_dragging_a_bottom_capsule_keeps_it_where_it_is(self):
+        reader, ov, cur = self._visible(overlay={"position": "bottom-center"})
+        self.assertFalse(ov.root.property("atTop"))
+        pill_screen_y = ov.view.y() + ov.root.property("pillY")
+        cur[:] = [ov.view.x() + 100, ov.view.y() + 100]
+        ov.bridge.dragStart()
+        self.assertTrue(ov.root.property("atTop"))
+        self.pump(lambda: False, 0.05)
+        self.assertAlmostEqual(ov.view.y() + ov.root.property("pillY"), pill_screen_y, delta=1)
+        ov.bridge.dragEnd()
+
+    def test_changing_position_in_config_drops_dragged_positions(self):
+        reader, ov, cur = self._visible()
+        ov.pins.set("x", {"x": 0.5, "y": 0.5})
+        ov.apply_config(parse_config({"overlay": {"position": "top-left"}}).overlay)
+        self.assertEqual(ov.pins.data, {})
+
+    def _mouse_drag(self, ov, cur, start, steps):
+        """Arrastre con eventos de mouse reales sobre la ventana QML (el cursor global se mueve con ella)."""
+        from PySide6.QtCore import QPoint
+        from PySide6.QtTest import QTest
+        v = ov.view
+        g0 = (v.x() + start[0], v.y() + start[1])
+        cur[:] = g0
+        QTest.mousePress(v, ui.Qt.MouseButton.LeftButton, ui.Qt.KeyboardModifier.NoModifier, QPoint(*start))
+        self.qapp.processEvents()
+        for dx, dy in steps:
+            cur[:] = [g0[0] + dx, g0[1] + dy]
+            QTest.mouseMove(v, v.mapFromGlobal(QPoint(*cur)))
+            self.qapp.processEvents()
+        QTest.mouseRelease(v, ui.Qt.MouseButton.LeftButton, ui.Qt.KeyboardModifier.NoModifier,
+                           v.mapFromGlobal(QPoint(*cur)))
+        self.qapp.processEvents()
+
+    def test_mouse_handle_and_body_drag_and_word_click(self):
+        reader, ov, cur = self._visible()
+        self.assertTrue(self.pump(lambda: ov.state()["complete"]))
+        seeks = []
+        real_seek = reader.seek
+        reader.seek = lambda t: (seeks.append(t), real_seek(t))
+        pill_y, cw = round(ov.root.property("pillY")), int(ov.root.property("cardW"))
+        x0, y0 = ov.view.x(), ov.view.y()
+        # manija: arrastra desde el primer movimiento
+        self._mouse_drag(ov, cur, (cw // 2, pill_y - 7), [(-10, 10), (-20, 30), (-30, 50)])
+        self.assertEqual((ov.view.x() - x0, ov.view.y() - y0), (-30, 50))
+        self.assertTrue(ov.pins.data)
+        ov.bridge.resetPos()
+        x1, y1 = ov.view.x(), ov.view.y()
+        # texto: 3 px = clic en la palabra (salta), no mueve ni guarda
+        self._mouse_drag(ov, cur, (60, pill_y + 30), [(3, 1)])
+        self.assertEqual((ov.view.x(), ov.view.y()), (x1, y1))
+        self.assertEqual(ov.pins.data, {})
+        self.assertEqual(len(seeks), 1)
+        # texto: más allá del umbral = arrastre, y NO salta
+        self._mouse_drag(ov, cur, (60, pill_y + 30), [(8, 5), (16, 10), (40, 20)])
+        # el arrastre arranca al pasar el umbral (en (8, 5)): desde ahí la ventana sigue al cursor
+        self.assertEqual((ov.view.x() - x1, ov.view.y() - y1), (40 - 8, 20 - 5))
+        self.assertEqual(len(seeks), 1)
+        self.assertTrue(ov.pins.data)
+
+    def test_mask_includes_the_handle(self):
+        reader, ov, cur = self._visible()
+        mask = ov.view.mask().boundingRect()
+        pill_y = round(ov.root.property("pillY"))
+        self.assertEqual(mask.top(), max(0, pill_y - 14))
+        self.assertGreaterEqual(mask.height(), 80 + 14)
 
     def test_config_values_reach_qml(self):
         _, ov = self.make({"opacity": 0.6, "font_size": 20})
